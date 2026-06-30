@@ -604,14 +604,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fileSha = cachedFile.sha
                 }
 
-                // Split into lines
-                val lines = fileContent.split("\n")
+                // Split into lines and auto-format comment spacing
+                val rawLines = fileContent.split("\n")
+                val lines = rawLines.map { line ->
+                    if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
+                        "! " + line.substring(1)
+                    } else {
+                        line
+                    }
+                }
+
+                val isTxtFile = path.endsWith(".txt", ignoreCase = true)
+                val lastLineIndex = (lines.size - 1).coerceAtLeast(0)
 
                 val newTab = TabState(
                     path = path,
                     lines = lines,
                     originalSha = fileSha,
-                    isModified = cachedFile?.isModified ?: false
+                    isModified = cachedFile?.isModified ?: false,
+                    activeLineIndex = if (isTxtFile) lastLineIndex else null,
+                    scrollIndex = if (isTxtFile) lastLineIndex else 0
                 )
 
                 _openTabs.value = currentTabs + newTab
@@ -693,10 +705,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateLine(index: Int, newText: String) {
         val tab = getActiveTabState() ?: return
         if (index < 0 || index >= tab.lines.size) return
-        if (tab.lines[index] == newText) return
+
+        val processedText = if (newText.startsWith("!") && !newText.startsWith("! ") && !newText.startsWith("!#")) {
+            "! " + newText.substring(1)
+        } else {
+            newText
+        }
+
+        if (tab.lines[index] == processedText) return
 
         val mutableLines = tab.lines.toMutableList()
-        mutableLines[index] = newText
+        mutableLines[index] = processedText
 
         // On typing, we edit the line text. To prevent spamming undo stack for every single character,
         // we only update undo stack when character count changes significantly or when enter/space is pressed,
@@ -704,7 +723,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // checking the previous stack value.
         val lastUndoLines = tab.undoStack.lastOrNull()
         val lineDiffersCount = lastUndoLines?.let { last ->
-            last.size != mutableLines.size || last[index].length - newText.length > 5 || last[index].length - newText.length < -5
+            last.size != mutableLines.size || last[index].length - processedText.length > 5 || last[index].length - processedText.length < -5
         } ?: true
 
         updateActiveTab(mutableLines, updateUndo = lineDiffersCount, activeLine = index)
@@ -725,6 +744,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val insertIdx = if (mutableLines.isEmpty()) 0 else idx + 1
         mutableLines.add(insertIdx, "")
         updateActiveTab(mutableLines, updateUndo = true, activeLine = insertIdx)
+    }
+
+    fun insertLineBelowWithText(index: Int, lineText: String) {
+        val tab = getActiveTabState() ?: return
+        val mutableLines = tab.lines.toMutableList()
+        val insertIdx = index + 1
+        if (insertIdx <= mutableLines.size) {
+            mutableLines.add(insertIdx, lineText)
+            updateActiveTab(mutableLines, updateUndo = true, activeLine = insertIdx)
+        }
+    }
+
+    fun mergeLineWithPrevious(index: Int) {
+        if (index <= 0) return
+        val tab = getActiveTabState() ?: return
+        if (index >= tab.lines.size) return
+        
+        val mutableLines = tab.lines.toMutableList()
+        val currentLineText = mutableLines[index]
+        val prevLineText = mutableLines[index - 1]
+        
+        // Merge current line into previous line
+        mutableLines[index - 1] = prevLineText + currentLineText
+        mutableLines.removeAt(index)
+        
+        updateActiveTab(mutableLines, updateUndo = true, activeLine = index - 1)
     }
 
     fun deleteActiveLine() {

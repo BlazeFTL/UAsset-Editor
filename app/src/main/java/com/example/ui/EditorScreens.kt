@@ -66,6 +66,9 @@ import com.example.viewmodel.FileSortOrder
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import kotlinx.coroutines.launch
 
 // Color tokens for our cohesive modern light theme
@@ -73,8 +76,8 @@ val LightBg = Color(0xFFF8FAFC)
 val LightSurface = Color(0xFFFFFFFF)
 val LightBorder = Color(0xFFE2E8F0)
 val EditorActiveLineBg = Color(0xFFF1F5F9)
-val LineNumberColor = Color(0xFF94A3B8)
-val ActiveLineNumberColor = Color(0xFF4F46E5)
+val LineNumberColor = Color(0xFF64748B) // More visible slate color
+val ActiveLineNumberColor = Color(0xFF1E3A8A) // Highly visible active line color
 val HighlightMatchBg = Color(0xFFFEF08A)
 val ActiveMatchBg = Color(0xFFFDE047)
 
@@ -346,87 +349,17 @@ fun LoginScreen(viewModel: MainViewModel) {
                     singleLine = true
                 )
 
-                // Owner & Repo Configs
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = owner,
-                        onValueChange = { owner = it },
-                        label = { Text("Repo Owner") },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("repo_owner_input"),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = repo,
-                        onValueChange = { repo = it },
-                        label = { Text("Repo Name") },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("repo_name_input"),
-                        singleLine = true
-                    )
-                }
-
-                OutlinedTextField(
-                    value = branch,
-                    onValueChange = { branch = it },
-                    label = { Text("Branch") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("repo_branch_input"),
-                    singleLine = true
-                )
-
-                Text(
-                    text = "Repository Presets",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-                    modifier = Modifier.align(Alignment.Start)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val uBlockSelected = owner == "uBlockOrigin" && repo == "uAssets"
-                    val blazeSelected = owner == "BlazeFTL" && repo == "My-Filters"
-                    
-                    Button(
-                        onClick = {
-                            owner = "uBlockOrigin"
-                            repo = "uAssets"
-                            branch = "master"
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (uBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (uBlockSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("uBlock Assets", style = MaterialTheme.typography.labelMedium)
-                    }
-                    
-                    Button(
-                        onClick = {
-                            owner = "BlazeFTL"
-                            repo = "My-Filters"
-                            branch = "master" // Auto-detect/corrected branch is master
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (blazeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (blazeSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("BlazeFTL Filters", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
-                    onClick = { viewModel.saveGitHubCredentials(token, owner, repo, branch) },
+                    onClick = { 
+                        viewModel.saveGitHubCredentials(
+                            token = token, 
+                            owner = savedOwner.ifEmpty { "uBlockOrigin" }, 
+                            repo = savedRepo.ifEmpty { "uAssets" }, 
+                            branch = savedBranch.ifEmpty { "master" }
+                        ) 
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
@@ -471,6 +404,10 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
     val pinnedFiles by viewModel.pinnedFiles.collectAsState()
     val fileSortOrder by viewModel.fileSortOrder.collectAsState()
     val modifiedFiles by viewModel.modifiedFiles.collectAsState()
+
+    val repoOwner by viewModel.repoOwner.collectAsState()
+    val repoName by viewModel.repoName.collectAsState()
+    val branchName by viewModel.branchName.collectAsState()
 
     val context = LocalContext.current
     var showSwitchRepoDialog by remember { mutableStateOf(false) }
@@ -619,7 +556,10 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
                         onTabClose = { viewModel.closeTab(it) },
                         onCommitClick = { viewModel.commitAndPushActiveTab() },
                         onLogoutClick = { viewModel.logout() },
-                        onSwitchRepoClick = { showSwitchRepoDialog = true }
+                        onSwitchRepoClick = { showSwitchRepoDialog = true },
+                        repoOwner = repoOwner,
+                        repoName = repoName,
+                        branchName = branchName
                     )
                 },
                 containerColor = LightBg
@@ -901,7 +841,10 @@ fun WorkspaceTopBar(
     onTabClose: (String) -> Unit,
     onCommitClick: () -> Unit,
     onLogoutClick: () -> Unit,
-    onSwitchRepoClick: () -> Unit
+    onSwitchRepoClick: () -> Unit,
+    repoOwner: String,
+    repoName: String,
+    branchName: String
 ) {
     Surface(
         color = LightSurface,
@@ -958,6 +901,26 @@ fun WorkspaceTopBar(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("Active Repo", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Text("$repoOwner/$repoName", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                    Text("Branch: $branchName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = {},
+                            enabled = false
+                        )
+                        Divider()
+                        DropdownMenuItem(
+                            text = { Text("Browse Files (Left Drawer)") },
+                            onClick = {
+                                showMenu = false
+                                onMenuClick()
+                            },
+                            leadingIcon = { Icon(Icons.Filled.Menu, contentDescription = null) }
+                        )
                         DropdownMenuItem(
                             text = { Text("Switch Repository") },
                             onClick = {
@@ -1136,46 +1099,25 @@ fun EditorWorkspace(
                         lazyListState.scrollToItem(index)
                         viewModel.selectLine(index)
                     }
+                },
+                onZoomIn = { viewModel.setFontSize(fontSize + 1f) },
+                onZoomOut = { viewModel.setFontSize(fontSize - 1f) },
+                onScrollToTop = {
+                    coroutineScope.launch {
+                        lazyListState.scrollToItem(0)
+                        viewModel.selectLine(0)
+                    }
+                },
+                onScrollToBottom = {
+                    coroutineScope.launch {
+                        val lastIdx = (tabState.lines.size - 1).coerceAtLeast(0)
+                        lazyListState.scrollToItem(lastIdx)
+                        viewModel.selectLine(lastIdx)
+                    }
                 }
             )
 
-            Divider(color = LightBorder)
-
-            // Dynamic width computation for line numbers to prevent layout shifting
-            val lineNumbersWidth = remember(tabState.lines.size) {
-                val digits = tabState.lines.size.toString().length
-                (digits * 9 + 20).coerceAtLeast(36).dp
-            }
-
-            // Lazy high-performance scroll rendering
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .testTag("editor_lazy_column")
-            ) {
-                itemsIndexed(
-                    items = tabState.lines,
-                    key = { index, _ -> "$index-${tabState.path}" }
-                ) { index, lineText ->
-                    LineRow(
-                        index = index,
-                        text = lineText,
-                        isActive = index == tabState.activeLineIndex,
-                        wordWrap = wordWrap,
-                        fontSize = fontSize,
-                        sharedHorizontalScrollState = sharedHorizontalScrollState,
-                        lineNumbersWidth = lineNumbersWidth,
-                        matches = searchMatches.filter { it.lineIndex == index },
-                        activeMatchStartChar = if (currentMatchIndex >= 0 && searchMatches[currentMatchIndex].lineIndex == index) searchMatches[currentMatchIndex].startChar else null,
-                        onLineClick = { viewModel.selectLine(index) },
-                        onTextChange = { viewModel.updateLine(index, it) }
-                    )
-                }
-            }
-
-            // Keyboard/Auxiliary Shortcut Action Bar at the bottom
+            // Keyboard/Auxiliary Shortcut Action Bar moved above the editor
             if (tabState.activeLineIndex != null) {
                 KeyboardShortcutBar(
                     onDuplicate = { viewModel.duplicateActiveLine() },
@@ -1199,6 +1141,51 @@ fun EditorWorkspace(
                     onDeselect = { viewModel.selectLine(null); focusManager.clearFocus() }
                 )
             }
+
+            Divider(color = LightBorder)
+
+            // Dynamic width computation for line numbers to prevent layout shifting
+            val lineNumbersWidth = remember(tabState.lines.size) {
+                val digits = tabState.lines.size.toString().length
+                (digits * 9 + 20).coerceAtLeast(36).dp
+            }
+
+            // Lazy high-performance scroll rendering
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, _, zoom, _ ->
+                            if (zoom != 1f) {
+                                viewModel.setFontSize(fontSize * zoom)
+                            }
+                        }
+                    }
+                    .testTag("editor_lazy_column")
+            ) {
+                itemsIndexed(
+                    items = tabState.lines,
+                    key = { index, _ -> "$index-${tabState.path}" }
+                ) { index, lineText ->
+                    LineRow(
+                        index = index,
+                        text = lineText,
+                        isActive = index == tabState.activeLineIndex,
+                        wordWrap = wordWrap,
+                        fontSize = fontSize,
+                        sharedHorizontalScrollState = sharedHorizontalScrollState,
+                        lineNumbersWidth = lineNumbersWidth,
+                        matches = searchMatches.filter { it.lineIndex == index },
+                        activeMatchStartChar = if (currentMatchIndex >= 0 && searchMatches[currentMatchIndex].lineIndex == index) searchMatches[currentMatchIndex].startChar else null,
+                        onLineClick = { viewModel.selectLine(index) },
+                        onTextChange = { viewModel.updateLine(index, it) },
+                        onEnterPressed = { viewModel.insertLineBelowWithText(index, it) },
+                        onBackspaceAtStart = { viewModel.mergeLineWithPrevious(index) }
+                    )
+                }
+            }
         }
     }
 }
@@ -1215,7 +1202,9 @@ fun LineRow(
     matches: List<SearchMatch>,
     activeMatchStartChar: Int?,
     onLineClick: () -> Unit,
-    onTextChange: (String) -> Unit
+    onTextChange: (String) -> Unit,
+    onEnterPressed: (String) -> Unit,
+    onBackspaceAtStart: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
 
@@ -1223,6 +1212,10 @@ fun LineRow(
         if (isActive) {
             focusRequester.requestFocus()
         }
+    }
+
+    var textFieldValue by remember(isActive, text) {
+        mutableStateOf(TextFieldValue(text = text, selection = TextRange(text.length)))
     }
 
     Row(
@@ -1236,6 +1229,7 @@ fun LineRow(
             text = (index + 1).toString(),
             fontFamily = FontFamily.Monospace,
             fontSize = (fontSize - 1).coerceAtLeast(8f).sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
             color = if (isActive) ActiveLineNumberColor else LineNumberColor,
             textAlign = TextAlign.End,
             modifier = Modifier
@@ -1259,11 +1253,36 @@ fun LineRow(
                         )
                 ) {
                     BasicTextField(
-                        value = text,
-                        onValueChange = onTextChange,
+                        value = textFieldValue,
+                        onValueChange = { newValue ->
+                            if (newValue.text.contains('\n')) {
+                                val parts = newValue.text.split('\n')
+                                val currentPart = parts[0]
+                                val remainingPart = parts.getOrElse(1) { "" }
+                                onTextChange(currentPart)
+                                onEnterPressed(remainingPart)
+                            } else {
+                                textFieldValue = newValue
+                                if (newValue.text != text) {
+                                    onTextChange(newValue.text)
+                                }
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester)
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.key == Key.Backspace && keyEvent.type == KeyEventType.KeyDown) {
+                                    if (textFieldValue.selection.start == 0 && textFieldValue.selection.end == 0) {
+                                        onBackspaceAtStart()
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            }
                             .testTag("line_edit_tf_$index"),
                         textStyle = TextStyle(
                             fontFamily = FontFamily.Monospace,
@@ -1279,7 +1298,7 @@ fun LineRow(
                                 )
                             }
                         },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                         keyboardActions = KeyboardActions(onDone = { onLineClick() })
                     )
                 }
@@ -1336,7 +1355,11 @@ fun EditorSettingsToolbar(
     hasRedo: Boolean,
     activeLineIndex: Int?,
     linesCount: Int,
-    onGoToLine: (Int) -> Unit
+    onGoToLine: (Int) -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onScrollToTop: () -> Unit,
+    onScrollToBottom: () -> Unit
 ) {
     var showGoToDialog by remember { mutableStateOf(false) }
 
@@ -1397,6 +1420,34 @@ fun EditorSettingsToolbar(
             modifier = Modifier.testTag("go_to_line_button")
         ) {
             Icon(Icons.Filled.FormatListNumbered, contentDescription = "Go to line", tint = MaterialTheme.colorScheme.onSurface)
+        }
+
+        IconButton(
+            onClick = onZoomIn,
+            modifier = Modifier.testTag("zoom_in_button")
+        ) {
+            Icon(Icons.Filled.ZoomIn, contentDescription = "Zoom In", tint = MaterialTheme.colorScheme.onSurface)
+        }
+
+        IconButton(
+            onClick = onZoomOut,
+            modifier = Modifier.testTag("zoom_out_button")
+        ) {
+            Icon(Icons.Filled.ZoomOut, contentDescription = "Zoom Out", tint = MaterialTheme.colorScheme.onSurface)
+        }
+
+        IconButton(
+            onClick = onScrollToTop,
+            modifier = Modifier.testTag("scroll_to_top_button")
+        ) {
+            Icon(Icons.Filled.ArrowUpward, contentDescription = "Go to Top", tint = MaterialTheme.colorScheme.onSurface)
+        }
+
+        IconButton(
+            onClick = onScrollToBottom,
+            modifier = Modifier.testTag("scroll_to_bottom_button")
+        ) {
+            Icon(Icons.Filled.ArrowDownward, contentDescription = "Go to Bottom", tint = MaterialTheme.colorScheme.onSurface)
         }
 
         Spacer(modifier = Modifier.weight(1f))
