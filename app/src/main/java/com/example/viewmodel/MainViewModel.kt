@@ -121,6 +121,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _wordWrap = MutableStateFlow(true)
     val wordWrap: StateFlow<Boolean> = _wordWrap.asStateFlow()
 
+    private val _fontSize = MutableStateFlow(13f)
+    val fontSize: StateFlow<Float> = _fontSize.asStateFlow()
+
+    fun setFontSize(size: Float) {
+        _fontSize.value = size.coerceIn(8f, 30f)
+    }
+
     private val _autoIndent = MutableStateFlow(false) // Filter lists shouldn't auto-indent
     val autoIndent: StateFlow<Boolean> = _autoIndent.asStateFlow()
 
@@ -271,16 +278,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     gitHubService.getGitTree(authHeader, owner, repo, branch, recursive = 1)
                 }
 
-                // Filter files of interest (uBlock filters, txt files, etc.)
-                // Typically located in filters/ or root folder. Let's include everything that is a blob and matches filter rules
-                val filteredFiles = response.tree.filter {
-                    it.type == "blob" && (
-                        it.path.startsWith("filters/") || 
-                        it.path.endsWith(".txt") || 
-                        it.path.endsWith(".rules") || 
-                        it.path.endsWith(".conf") ||
-                        it.path.contains("filter")
-                    )
+                // Filter files of interest dynamically based on user requirements
+                val filteredFiles = response.tree.filter { entry ->
+                    if (entry.type != "blob") return@filter false
+                    val path = entry.path
+                    val isUblock = owner.equals("uBlockOrigin", ignoreCase = true) && repo.equals("uAssets", ignoreCase = true)
+                    
+                    if (isUblock) {
+                        // "Also It Should Be Only The Contents Of filter Folder Only" -> filters/
+                        path.startsWith("filters/", ignoreCase = true)
+                    } else {
+                        // "I Wish To Add https://github.com/BlazeFTL/My-Filters (only .txt and .html .yaml files"
+                        path.endsWith(".txt", ignoreCase = true) ||
+                        path.endsWith(".html", ignoreCase = true) ||
+                        path.endsWith(".yaml", ignoreCase = true)
+                    }
                 }
 
                 _allRepoFiles.value = filteredFiles

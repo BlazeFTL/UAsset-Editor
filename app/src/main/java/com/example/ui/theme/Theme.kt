@@ -10,31 +10,41 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
+import androidx.compose.ui.graphics.Color
+
 private val DarkColorScheme =
-  darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
+  darkColorScheme(
+    primary = Color(0xFF818CF8),
+    secondary = Color(0xFF2DD4BF),
+    tertiary = Color(0xFFA78BFA),
+    background = Color(0xFF0F172A),
+    surface = Color(0xFF1E293B),
+    onPrimary = Color(0xFF0F172A),
+    onBackground = Color(0xFFF8FAFC),
+    onSurface = Color(0xFFF8FAFC)
+  )
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = Color(0xFF4F46E5),        // Indigo
+    secondary = Color(0xFF0D9488),      // Teal
+    tertiary = Color(0xFF8B5CF6),       // Purple
+    background = Color(0xFFF8FAFC),     // Off-white / light slate
+    surface = Color(0xFFFFFFFF),        // Crisp white
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    onBackground = Color(0xFF0F172A),   // Dark slate
+    onSurface = Color(0xFF0F172A),      // Dark slate
+    surfaceVariant = Color(0xFFF1F5F9),  // Light grey
+    onSurfaceVariant = Color(0xFF475569),// Soft slate
+    outline = Color(0xFFCBD5E1)         // Soft gray border
   )
 
 @Composable
 fun MyApplicationTheme(
-  darkTheme: Boolean = isSystemInDarkTheme(),
-  // Dynamic color is available on Android 12+
-  dynamicColor: Boolean = true,
+  darkTheme: Boolean = false, // Enforce light theme by default as requested
+  dynamicColor: Boolean = false, // Keep colors cohesive and custom
   content: @Composable () -> Unit,
 ) {
   val colorScheme =

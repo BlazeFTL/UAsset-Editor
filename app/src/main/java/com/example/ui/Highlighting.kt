@@ -7,18 +7,18 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 
 data class FilterColors(
-    val comment: Color = Color(0xFF8A99A8),          // Slate grey
-    val exception: Color = Color(0xFF4CAF50),        // Emerald Green (distinct @@)
-    val cosmeticSeparator: Color = Color(0xFFF44336),// Red (##, #@#)
-    val cosmeticSelector: Color = Color(0xFF2196F3), // Blue
-    val scriptlet: Color = Color(0xFF9C27B0),        // Purple (##+js)
-    val scriptletArgs: Color = Color(0xFFBA68C8),    // Light Purple
-    val htmlFilter: Color = Color(0xFFFF9800),       // Orange (##^)
-    val domainList: Color = Color(0xFF00BCD4),       // Cyan
-    val regex: Color = Color(0xFFE91E63),            // Pink (/.../)
-    val networkBase: Color = Color(0xFFE0E0E0),      // Off-white / light-grey for dark mode
-    val options: Color = Color(0xFFFFEB3B),          // Yellow/gold options after $
-    val accent: Color = Color(0xFFE040FB)            // Magenta highlight for || and ^
+    val comment: Color = Color(0xFF64748B),          // Slate grey (readable)
+    val exception: Color = Color(0xFF16A34A),        // Dark emerald Green (distinct @@)
+    val cosmeticSeparator: Color = Color(0xFFDC2626),// Crimson Red (##, #@#)
+    val cosmeticSelector: Color = Color(0xFF2563EB), // Royal Blue
+    val scriptlet: Color = Color(0xFF7C3AED),        // Violet Purple (##+js)
+    val scriptletArgs: Color = Color(0xFF9333EA),    // Purple-magenta
+    val htmlFilter: Color = Color(0xFFD97706),       // Amber Orange (##^)
+    val domainList: Color = Color(0xFF0D9488),       // Teal
+    val regex: Color = Color(0xFFDB2777),            // Deep Pink (/.../)
+    val networkBase: Color = Color(0xFF1E293B),      // Slate charcoal for high contrast light mode
+    val options: Color = Color(0xFFB45309),          // Brownish yellow/amber (very readable)
+    val accent: Color = Color(0xFFC026D3)            // Fuchsia highlight for || and ^
 )
 
 fun highlightFilterLine(line: String, colors: FilterColors = FilterColors()): AnnotatedString {

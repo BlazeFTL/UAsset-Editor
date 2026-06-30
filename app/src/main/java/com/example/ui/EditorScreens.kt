@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -57,17 +58,19 @@ import com.example.viewmodel.MainViewModel
 import com.example.viewmodel.TabState
 import com.example.viewmodel.SearchMatch
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.launch
 
-// Color tokens for our cohesive high-contrast dark theme
-val DarkBg = Color(0xFF121417)
-val DarkSurface = Color(0xFF1A1D24)
-val DarkBorder = Color(0xFF2C313C)
-val EditorActiveLineBg = Color(0xFF232834)
-val LineNumberColor = Color(0xFF5C6370)
-val ActiveLineNumberColor = Color(0xFF61AFEF)
-val HighlightMatchBg = Color(0xFF61AFEF).copy(alpha = 0.3f)
-val ActiveMatchBg = Color(0xFFE5C07B).copy(alpha = 0.4f)
+// Color tokens for our cohesive modern light theme
+val LightBg = Color(0xFFF8FAFC)
+val LightSurface = Color(0xFFFFFFFF)
+val LightBorder = Color(0xFFE2E8F0)
+val EditorActiveLineBg = Color(0xFFF1F5F9)
+val LineNumberColor = Color(0xFF94A3B8)
+val ActiveLineNumberColor = Color(0xFF4F46E5)
+val HighlightMatchBg = Color(0xFFFEF08A)
+val ActiveMatchBg = Color(0xFFFDE047)
 
 @Composable
 fun AppContent(viewModel: MainViewModel) {
@@ -95,7 +98,7 @@ fun AppContent(viewModel: MainViewModel) {
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = DarkBg
+        color = LightBg
     ) {
         when (currentScreen) {
             "LOGIN" -> LoginScreen(viewModel)
@@ -131,7 +134,8 @@ fun LoginScreen(viewModel: MainViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBg)
+            .background(LightBg)
+            .statusBarsPadding()
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -153,14 +157,14 @@ fun LoginScreen(viewModel: MainViewModel) {
                 text = "uBlock Filter Editor",
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             )
 
             Text(
                 text = "A high-performance editor with syntax highlighting, differential syncing, and GitHub integration.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
@@ -188,13 +192,7 @@ fun LoginScreen(viewModel: MainViewModel) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("github_token_input"),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = Color.Gray
-                )
+                singleLine = true
             )
 
             // Owner & Repo Configs
@@ -206,13 +204,7 @@ fun LoginScreen(viewModel: MainViewModel) {
                     modifier = Modifier
                         .weight(1f)
                         .testTag("repo_owner_input"),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedLabelColor = MaterialTheme.colorScheme.primary,
-                        unfocusedLabelColor = Color.Gray
-                    )
+                    singleLine = true
                 )
 
                 OutlinedTextField(
@@ -222,13 +214,7 @@ fun LoginScreen(viewModel: MainViewModel) {
                     modifier = Modifier
                         .weight(1f)
                         .testTag("repo_name_input"),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedLabelColor = MaterialTheme.colorScheme.primary,
-                        unfocusedLabelColor = Color.Gray
-                    )
+                    singleLine = true
                 )
             }
 
@@ -239,14 +225,54 @@ fun LoginScreen(viewModel: MainViewModel) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("repo_branch_input"),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = Color.Gray
-                )
+                singleLine = true
             )
+
+            Text(
+                text = "Repository Presets",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                modifier = Modifier.align(Alignment.Start)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val uBlockSelected = owner == "uBlockOrigin" && repo == "uAssets"
+                val blazeSelected = owner == "BlazeFTL" && repo == "My-Filters"
+                
+                Button(
+                    onClick = {
+                        owner = "uBlockOrigin"
+                        repo = "uAssets"
+                        branch = "master"
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (uBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (uBlockSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("uBlock Assets", style = MaterialTheme.typography.labelMedium)
+                }
+                
+                Button(
+                    onClick = {
+                        owner = "BlazeFTL"
+                        repo = "My-Filters"
+                        branch = "main"
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (blazeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (blazeSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("BlazeFTL Filters", style = MaterialTheme.typography.labelMedium)
+                }
+            }
 
             Button(
                 onClick = { viewModel.saveGitHubCredentials(token, owner, repo, branch) },
@@ -271,7 +297,7 @@ fun LoginScreen(viewModel: MainViewModel) {
                     .fillMaxWidth()
                     .testTag("offline_mode_button")
             ) {
-                Text("Continue in Offline/Viewer Mode", color = Color.Gray)
+                Text("Continue in Offline/Viewer Mode", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -310,7 +336,7 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = DarkSurface,
+                drawerContainerColor = LightSurface,
                 modifier = Modifier
                     .width(320.dp)
                     .fillMaxHeight()
@@ -328,6 +354,7 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
         }
     ) {
         Scaffold(
+            modifier = Modifier.statusBarsPadding(),
             topBar = {
                 WorkspaceTopBar(
                     activeTabPath = activeTabPath,
@@ -340,7 +367,7 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
                     onLogoutClick = { viewModel.logout() }
                 )
             },
-            containerColor = DarkBg
+            containerColor = LightBg
         ) { innerPadding ->
             Box(
                 modifier = Modifier
@@ -368,7 +395,7 @@ fun EmptyWorkspaceState(onOpenDrawer: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBg),
+            .background(LightBg),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -385,13 +412,13 @@ fun EmptyWorkspaceState(onOpenDrawer: () -> Unit) {
             Text(
                 text = "No File Open",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold
             )
             Text(
                 text = "Open the repository drawer to select and sync files.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center
             )
             Button(
@@ -432,7 +459,7 @@ fun FileBrowserPanel(
             Text(
                 text = "Repository Files",
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             )
 
@@ -457,22 +484,16 @@ fun FileBrowserPanel(
                 .fillMaxWidth()
                 .testTag("file_search_input"),
             singleLine = true,
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search icon") },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedContainerColor = DarkBg,
-                unfocusedContainerColor = DarkBg
-            )
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search icon") }
         )
 
-        Divider(color = DarkBorder)
+        Divider(color = LightBorder)
 
         if (filteredFiles.isEmpty()) {
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
                     text = if (isSyncing) "Syncing repository..." else "No files found. Try syncing.",
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -497,12 +518,12 @@ fun FileBrowserPanel(
                         Icon(
                             imageVector = Icons.Outlined.Description,
                             contentDescription = "File",
-                            tint = ActiveLineNumberColor,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = entry.path,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -526,8 +547,8 @@ fun WorkspaceTopBar(
     onLogoutClick: () -> Unit
 ) {
     Surface(
-        color = DarkSurface,
-        border = BorderStroke(1.dp, DarkBorder),
+        color = LightSurface,
+        border = BorderStroke(1.dp, LightBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -538,7 +559,7 @@ fun WorkspaceTopBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onMenuClick, modifier = Modifier.testTag("drawer_menu_button")) {
-                    Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
+                    Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = MaterialTheme.colorScheme.onSurface)
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -546,7 +567,7 @@ fun WorkspaceTopBar(
                 Text(
                     text = "uBlock Editor",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
@@ -567,12 +588,12 @@ fun WorkspaceTopBar(
                         onClick = onCommitClick,
                         modifier = Modifier.testTag("commit_button")
                     ) {
-                        Icon(Icons.Filled.CloudUpload, contentDescription = "Commit to GitHub", tint = Color(0xFFFFB74D))
+                        Icon(Icons.Filled.CloudUpload, contentDescription = "Commit to GitHub", tint = Color(0xFFF59E0B))
                     }
                 }
 
                 IconButton(onClick = onLogoutClick, modifier = Modifier.testTag("logout_button")) {
-                    Icon(Icons.Filled.ExitToApp, contentDescription = "Logout", tint = Color.LightGray)
+                    Icon(Icons.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -580,8 +601,8 @@ fun WorkspaceTopBar(
                 ScrollableTabRow(
                     selectedTabIndex = openTabs.indexOfFirst { it.path == activeTabPath }.coerceAtLeast(0),
                     edgePadding = 12.dp,
-                    containerColor = DarkSurface,
-                    contentColor = Color.White,
+                    containerColor = LightSurface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                     divider = {}
                 ) {
                     openTabs.forEach { tab ->
@@ -591,7 +612,7 @@ fun WorkspaceTopBar(
                             onClick = { onTabSelect(tab.path) },
                             modifier = Modifier
                                 .testTag("tab_${tab.path.replace("/", "_")}")
-                                .background(if (isSelected) DarkBg else DarkSurface)
+                                .background(if (isSelected) LightBg else LightSurface)
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -603,19 +624,19 @@ fun WorkspaceTopBar(
                                         modifier = Modifier
                                             .size(8.dp)
                                             .clip(RoundedCornerShape(4.dp))
-                                            .background(Color(0xFFFFB74D))
+                                            .background(Color(0xFFF59E0B))
                                     )
                                 }
                                 Text(
                                     text = tab.path.substringAfterLast("/"),
-                                    color = if (isSelected) Color.White else Color.Gray,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                                 Icon(
                                     imageVector = Icons.Filled.Close,
                                     contentDescription = "Close tab",
-                                    tint = if (isSelected) Color.White else Color.Gray,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier
                                         .size(14.dp)
                                         .clickable { onTabClose(tab.path) }
@@ -648,6 +669,10 @@ fun EditorWorkspace(
 
     val wordWrap by viewModel.wordWrap.collectAsState()
     val autoIndent by viewModel.autoIndent.collectAsState()
+    val fontSize by viewModel.fontSize.collectAsState()
+
+    // Shared horizontal scroll state across lines when word wrapping is off
+    val sharedHorizontalScrollState = rememberScrollState()
 
     // Line list state
     val lazyListState = rememberLazyListState()
@@ -667,7 +692,17 @@ fun EditorWorkspace(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    if (zoom != 1f) {
+                        viewModel.setFontSize(fontSize * zoom)
+                    }
+                }
+            }
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Find & Replace Panel (Collapsible)
             AnimatedVisibility(
@@ -722,7 +757,7 @@ fun EditorWorkspace(
                 }
             )
 
-            Divider(color = DarkBorder)
+            Divider(color = LightBorder)
 
             // Dynamic width computation for line numbers to prevent layout shifting
             val lineNumbersWidth = remember(tabState.lines.size) {
@@ -747,6 +782,8 @@ fun EditorWorkspace(
                         text = lineText,
                         isActive = index == tabState.activeLineIndex,
                         wordWrap = wordWrap,
+                        fontSize = fontSize,
+                        sharedHorizontalScrollState = sharedHorizontalScrollState,
                         lineNumbersWidth = lineNumbersWidth,
                         matches = searchMatches.filter { it.lineIndex == index },
                         activeMatchStartChar = if (currentMatchIndex >= 0 && searchMatches[currentMatchIndex].lineIndex == index) searchMatches[currentMatchIndex].startChar else null,
@@ -790,6 +827,8 @@ fun LineRow(
     text: String,
     isActive: Boolean,
     wordWrap: Boolean,
+    fontSize: Float,
+    sharedHorizontalScrollState: ScrollState,
     lineNumbersWidth: androidx.compose.ui.unit.Dp,
     matches: List<SearchMatch>,
     activeMatchStartChar: Int?,
@@ -814,7 +853,7 @@ fun LineRow(
         Text(
             text = (index + 1).toString(),
             fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
+            fontSize = (fontSize - 1).coerceAtLeast(8f).sp,
             color = if (isActive) ActiveLineNumberColor else LineNumberColor,
             textAlign = TextAlign.End,
             modifier = Modifier
@@ -830,30 +869,38 @@ fun LineRow(
         ) {
             if (isActive) {
                 // Character-by-character styled live inline text field
-                BasicTextField(
-                    value = text,
-                    onValueChange = onTextChange,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focusRequester)
-                        .testTag("line_edit_tf_$index"),
-                    textStyle = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        color = Color.White
-                    ),
-                    cursorBrush = SolidColor(Color.White),
-                    visualTransformation = remember {
-                        VisualTransformation { annotated ->
-                            TransformedText(
-                                highlightFilterLine(annotated.text),
-                                OffsetMapping.Identity
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { onLineClick() })
-                )
+                        .then(
+                            if (!wordWrap) Modifier.horizontalScroll(sharedHorizontalScrollState) else Modifier
+                        )
+                ) {
+                    BasicTextField(
+                        value = text,
+                        onValueChange = onTextChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            .testTag("line_edit_tf_$index"),
+                        textStyle = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = fontSize.sp,
+                            color = MaterialTheme.colorScheme.onBackground
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        visualTransformation = remember {
+                            VisualTransformation { annotated ->
+                                TransformedText(
+                                    highlightFilterLine(annotated.text),
+                                    OffsetMapping.Identity
+                                )
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { onLineClick() })
+                    )
+                }
             } else {
                 val highlighted = remember(text) { highlightFilterLine(text) }
                 // Overlay search highlights onto the annotated string
@@ -874,20 +921,19 @@ fun LineRow(
                     }
                 }
 
-                val horizontalScrollState = rememberScrollState()
-
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(
-                            if (!wordWrap) Modifier.horizontalScroll(horizontalScrollState) else Modifier
+                            if (!wordWrap) Modifier.horizontalScroll(sharedHorizontalScrollState) else Modifier
                         )
                 ) {
                     Text(
                         text = finalAnnotated,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
+                        fontSize = fontSize.sp,
                         softWrap = wordWrap,
+                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -915,7 +961,7 @@ fun EditorSettingsToolbar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(DarkSurface)
+            .background(LightSurface)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -925,7 +971,11 @@ fun EditorSettingsToolbar(
             enabled = hasUndo,
             modifier = Modifier.testTag("undo_button")
         ) {
-            Icon(Icons.Filled.Undo, contentDescription = "Undo", tint = if (hasUndo) Color.White else Color.DarkGray)
+            Icon(
+                imageVector = Icons.Filled.Undo,
+                contentDescription = "Undo",
+                tint = if (hasUndo) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            )
         }
 
         IconButton(
@@ -933,7 +983,11 @@ fun EditorSettingsToolbar(
             enabled = hasRedo,
             modifier = Modifier.testTag("redo_button")
         ) {
-            Icon(Icons.Filled.Redo, contentDescription = "Redo", tint = if (hasRedo) Color.White else Color.DarkGray)
+            Icon(
+                imageVector = Icons.Filled.Redo,
+                contentDescription = "Redo",
+                tint = if (hasRedo) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            )
         }
 
         VerticalDivider()
@@ -945,7 +999,7 @@ fun EditorSettingsToolbar(
             Icon(
                 imageVector = if (wordWrap) Icons.Filled.WrapText else Icons.Outlined.WrapText,
                 contentDescription = "Word Wrap",
-                tint = if (wordWrap) MaterialTheme.colorScheme.primary else Color.White
+                tint = if (wordWrap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
             )
         }
 
@@ -953,14 +1007,14 @@ fun EditorSettingsToolbar(
             onClick = onFindToggle,
             modifier = Modifier.testTag("find_replace_toggle")
         ) {
-            Icon(Icons.Filled.FindInPage, contentDescription = "Find & Replace", tint = Color.White)
+            Icon(Icons.Filled.FindInPage, contentDescription = "Find & Replace", tint = MaterialTheme.colorScheme.onSurface)
         }
 
         IconButton(
             onClick = { showGoToDialog = true },
             modifier = Modifier.testTag("go_to_line_button")
         ) {
-            Icon(Icons.Filled.FormatListNumbered, contentDescription = "Go to line", tint = Color.White)
+            Icon(Icons.Filled.FormatListNumbered, contentDescription = "Go to line", tint = MaterialTheme.colorScheme.onSurface)
         }
 
         Spacer(modifier = Modifier.weight(1f))
@@ -969,7 +1023,7 @@ fun EditorSettingsToolbar(
         Text(
             text = "Line: ${activeLineIndex?.let { it + 1 } ?: "-"} / $linesCount",
             fontSize = 11.sp,
-            color = Color.LightGray,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(end = 4.dp)
         )
@@ -979,17 +1033,13 @@ fun EditorSettingsToolbar(
         var lineNumberInput by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showGoToDialog = false },
-            title = { Text("Go to Line Number", color = Color.White) },
+            title = { Text("Go to Line Number", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 OutlinedTextField(
                     value = lineNumberInput,
                     onValueChange = { lineNumberInput = it.filter { char -> char.isDigit() } },
                     label = { Text("Line number (1-$linesCount)") },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
             },
@@ -1012,7 +1062,7 @@ fun EditorSettingsToolbar(
                     Text("Cancel")
                 }
             },
-            containerColor = DarkSurface
+            containerColor = LightSurface
         )
     }
 }
@@ -1028,8 +1078,8 @@ fun KeyboardShortcutBar(
     onDeselect: () -> Unit
 ) {
     Surface(
-        color = DarkSurface,
-        border = BorderStroke(1.dp, DarkBorder),
+        color = LightSurface,
+        border = BorderStroke(1.dp, LightBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -1043,43 +1093,37 @@ fun KeyboardShortcutBar(
             AssistChip(
                 onClick = onInsertAbove,
                 label = { Text("Insert Above", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White)
+                leadingIcon = { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(14.dp)) }
             )
 
             AssistChip(
                 onClick = onInsertBelow,
                 label = { Text("Insert Below", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White)
+                leadingIcon = { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(14.dp)) }
             )
 
             AssistChip(
                 onClick = onDuplicate,
                 label = { Text("Duplicate", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White)
+                leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp)) }
             )
 
             AssistChip(
                 onClick = onDelete,
                 label = { Text("Delete Line", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White)
+                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(14.dp)) }
             )
 
             AssistChip(
                 onClick = onMoveUp,
                 label = { Text("Move Up", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White)
+                leadingIcon = { Icon(Icons.Filled.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp)) }
             )
 
             AssistChip(
                 onClick = onMoveDown,
                 label = { Text("Move Down", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                colors = AssistChipDefaults.assistChipColors(labelColor = Color.White, leadingIconContentColor = Color.White)
+                leadingIcon = { Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(14.dp)) }
             )
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -1120,9 +1164,9 @@ fun FindReplacePanel(
             .fillMaxWidth()
             .padding(12.dp)
             .testTag("find_replace_panel"),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        colors = CardDefaults.cardColors(containerColor = LightSurface),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(1.dp, DarkBorder)
+        border = BorderStroke(1.dp, LightBorder)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -1141,29 +1185,25 @@ fun FindReplacePanel(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("find_input_field"),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
+                    singleLine = true
                 )
 
                 IconButton(
                     onClick = onToggleRegex,
                     colors = IconButtonDefaults.iconButtonColors(containerColor = if (isRegex) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                 ) {
-                    Text(".*", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(".*", color = if (isRegex) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(
                     onClick = onToggleCase,
                     colors = IconButtonDefaults.iconButtonColors(containerColor = if (isCase) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                 ) {
-                    Text("Aa", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Aa", color = if (isCase) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close Find", tint = Color.White)
+                    Icon(Icons.Filled.Close, contentDescription = "Close Find", tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
 
@@ -1180,11 +1220,7 @@ fun FindReplacePanel(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("replace_input_field"),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
+                    singleLine = true
                 )
 
                 Button(
@@ -1212,17 +1248,25 @@ fun FindReplacePanel(
                 Text(
                     text = if (matchesCount > 0) "${currentMatchIdx + 1} of $matchesCount matches" else "No matches",
                     fontSize = 12.sp,
-                    color = Color.LightGray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.weight(1f)
                 )
 
                 IconButton(onClick = onPrev, enabled = matchesCount > 0) {
-                    Icon(Icons.Filled.NavigateBefore, contentDescription = "Previous Match", tint = if (matchesCount > 0) Color.White else Color.DarkGray)
+                    Icon(
+                        imageVector = Icons.Filled.NavigateBefore,
+                        contentDescription = "Previous Match",
+                        tint = if (matchesCount > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
                 }
 
                 IconButton(onClick = onNext, enabled = matchesCount > 0) {
-                    Icon(Icons.Filled.NavigateNext, contentDescription = "Next Match", tint = if (matchesCount > 0) Color.White else Color.DarkGray)
+                    Icon(
+                        imageVector = Icons.Filled.NavigateNext,
+                        contentDescription = "Next Match",
+                        tint = if (matchesCount > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
                 }
             }
         }
@@ -1235,6 +1279,6 @@ fun VerticalDivider() {
         modifier = Modifier
             .width(1.dp)
             .height(24.dp)
-            .background(DarkBorder)
+            .background(LightBorder)
     )
 }
