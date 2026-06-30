@@ -1,0 +1,6 @@
+{
+  "name": "Filter Editor",
+  "description": "A high-performance text editor for browsing, editing, and syncing uBlock Origin and custom adblock filters with syntax highlighting and GitHub differential updates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
