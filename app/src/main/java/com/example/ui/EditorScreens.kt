@@ -65,7 +65,7 @@ import com.example.viewmodel.SearchMatch
 import com.example.viewmodel.FileSortOrder
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
@@ -557,6 +557,9 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
                         onCommitClick = { viewModel.commitAndPushActiveTab() },
                         onLogoutClick = { viewModel.logout() },
                         onSwitchRepoClick = { showSwitchRepoDialog = true },
+                        onQuickSwitchRepo = { owner, repo, branch ->
+                            viewModel.updateRepositorySelection(owner, repo, branch)
+                        },
                         repoOwner = repoOwner,
                         repoName = repoName,
                         branchName = branchName
@@ -842,6 +845,7 @@ fun WorkspaceTopBar(
     onCommitClick: () -> Unit,
     onLogoutClick: () -> Unit,
     onSwitchRepoClick: () -> Unit,
+    onQuickSwitchRepo: (String, String, String) -> Unit,
     repoOwner: String,
     repoName: String,
     branchName: String
@@ -891,6 +895,36 @@ fun WorkspaceTopBar(
                         Icon(Icons.Filled.CloudUpload, contentDescription = "Commit to GitHub", tint = Color(0xFFF59E0B))
                     }
                 }
+
+                // Dedicated Quick-Switch Repository Button
+                val isUAssets = repoOwner == "uBlockOrigin" && repoName == "uAssets"
+                val switchTargetLabel = if (isUAssets) "My-Filters" else "uAssets"
+                
+                Button(
+                    onClick = {
+                        val targetOwner = if (isUAssets) "BlazeFTL" else "uBlockOrigin"
+                        val targetRepo = if (isUAssets) "My-Filters" else "uAssets"
+                        onQuickSwitchRepo(targetOwner, targetRepo, "master")
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier
+                        .height(34.dp)
+                        .testTag("quick_switch_repo_button"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SwapHoriz,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(switchTargetLabel, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+                
+                Spacer(modifier = Modifier.width(4.dp))
 
                 var showMenu by remember { mutableStateOf(false) }
                 Box {
@@ -1041,9 +1075,37 @@ fun EditorWorkspace(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    if (zoom != 1f) {
-                        viewModel.setFontSize(fontSize * zoom)
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pointers = event.changes
+                        if (pointers.size >= 2) {
+                            val p1 = pointers[0]
+                            val p2 = pointers[1]
+                            if (p1.pressed && p2.pressed) {
+                                val prevPos1 = p1.previousPosition
+                                val prevPos2 = p2.previousPosition
+                                val currentPos1 = p1.position
+                                val currentPos2 = p2.position
+                                
+                                val dx = currentPos1.x - currentPos2.x
+                                val dy = currentPos1.y - currentPos2.y
+                                val currentDistance = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                                
+                                val pdx = prevPos1.x - prevPos2.x
+                                val pdy = prevPos1.y - prevPos2.y
+                                val prevDistance = Math.sqrt((pdx * pdx + pdy * pdy).toDouble()).toFloat()
+                                
+                                if (prevDistance > 0f && currentDistance > 0f) {
+                                    val scale = currentDistance / prevDistance
+                                    if (Math.abs(scale - 1f) > 0.005f) {
+                                        val newSize = (fontSize * scale).coerceIn(10f, 30f)
+                                        viewModel.setFontSize(newSize)
+                                        event.changes.forEach { it.consume() }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1156,13 +1218,6 @@ fun EditorWorkspace(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, _, zoom, _ ->
-                            if (zoom != 1f) {
-                                viewModel.setFontSize(fontSize * zoom)
-                            }
-                        }
-                    }
                     .testTag("editor_lazy_column")
             ) {
                 itemsIndexed(
