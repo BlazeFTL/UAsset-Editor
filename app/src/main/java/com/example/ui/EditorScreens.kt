@@ -1,6 +1,11 @@
 package com.example.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -57,6 +62,7 @@ import com.example.api.GitTreeEntry
 import com.example.viewmodel.MainViewModel
 import com.example.viewmodel.TabState
 import com.example.viewmodel.SearchMatch
+import com.example.viewmodel.FileSortOrder
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -113,14 +119,27 @@ fun AppContent(viewModel: MainViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(viewModel: MainViewModel) {
-    var token by remember { mutableStateOf("") }
-    var owner by remember { mutableStateOf("uBlockOrigin") }
-    var repo by remember { mutableStateOf("uAssets") }
-    var branch by remember { mutableStateOf("master") }
+    val savedToken by viewModel.githubToken.collectAsState()
+    val savedOwner by viewModel.repoOwner.collectAsState()
+    val savedRepo by viewModel.repoName.collectAsState()
+    val savedBranch by viewModel.branchName.collectAsState()
+
+    var token by remember(savedToken) { mutableStateOf(savedToken ?: "") }
+    var owner by remember(savedOwner) { mutableStateOf(savedOwner) }
+    var repo by remember(savedRepo) { mutableStateOf(savedRepo) }
+    var branch by remember(savedBranch) { mutableStateOf(savedBranch) }
 
     val isSyncing by viewModel.isSyncing.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val successMessage by viewModel.successMessage.collectAsState()
+
+    // Device Flow States
+    val deviceUserCode by viewModel.deviceUserCode.collectAsState()
+    val deviceVerificationUri by viewModel.deviceVerificationUri.collectAsState()
+    val deviceAuthPolling by viewModel.deviceAuthPolling.collectAsState()
+    val deviceAuthError by viewModel.deviceAuthError.collectAsState()
+
+    var selectedAuthTab by remember { mutableStateOf(0) } // 0: GitHub Account Login, 1: PAT Login
 
     val context = LocalContext.current
 
@@ -169,13 +188,13 @@ fun LoginScreen(viewModel: MainViewModel) {
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            if (errorMessage != null) {
+            if (errorMessage != null || deviceAuthError != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = errorMessage ?: "",
+                        text = errorMessage ?: deviceAuthError ?: "",
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(12.dp),
                         style = MaterialTheme.typography.bodySmall
@@ -183,111 +202,244 @@ fun LoginScreen(viewModel: MainViewModel) {
                 }
             }
 
-            // PAT Input
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text("GitHub Personal Access Token (PAT)") },
-                placeholder = { Text("github_pat_...") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("github_token_input"),
-                singleLine = true
-            )
-
-            // Owner & Repo Configs
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = owner,
-                    onValueChange = { owner = it },
-                    label = { Text("Repo Owner") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("repo_owner_input"),
-                    singleLine = true
+            // Auth Selection Tabs
+            TabRow(
+                selectedTabIndex = selectedAuthTab,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Tab(
+                    selected = selectedAuthTab == 0,
+                    onClick = { selectedAuthTab = 0 },
+                    text = { Text("GitHub Login") },
+                    icon = { Icon(Icons.Filled.AccountCircle, contentDescription = "OAuth Login") }
                 )
-
-                OutlinedTextField(
-                    value = repo,
-                    onValueChange = { repo = it },
-                    label = { Text("Repo Name") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("repo_name_input"),
-                    singleLine = true
+                Tab(
+                    selected = selectedAuthTab == 1,
+                    onClick = { selectedAuthTab = 1 },
+                    text = { Text("Use PAT") },
+                    icon = { Icon(Icons.Filled.Key, contentDescription = "PAT Login") }
                 )
             }
 
-            OutlinedTextField(
-                value = branch,
-                onValueChange = { branch = it },
-                label = { Text("Branch") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("repo_branch_input"),
-                singleLine = true
-            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = "Repository Presets",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-                modifier = Modifier.align(Alignment.Start)
-            )
+            if (selectedAuthTab == 0) {
+                // GitHub OAuth Login (Device Flow)
+                if (deviceUserCode == null) {
+                    Text(
+                        text = "Sign in securely via GitHub OAuth. No need to manually create, copy, or paste complex personal access tokens.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val uBlockSelected = owner == "uBlockOrigin" && repo == "uAssets"
-                val blazeSelected = owner == "BlazeFTL" && repo == "My-Filters"
-                
-                Button(
-                    onClick = {
-                        owner = "uBlockOrigin"
-                        repo = "uAssets"
-                        branch = "master"
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (uBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (uBlockSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("uBlock Assets", style = MaterialTheme.typography.labelMedium)
-                }
-                
-                Button(
-                    onClick = {
-                        owner = "BlazeFTL"
-                        repo = "My-Filters"
-                        branch = "main"
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (blazeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (blazeSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("BlazeFTL Filters", style = MaterialTheme.typography.labelMedium)
-                }
-            }
-
-            Button(
-                onClick = { viewModel.saveGitHubCredentials(token, owner, repo, branch) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("authenticate_button"),
-                enabled = token.isNotEmpty() && !isSyncing
-            ) {
-                if (isSyncing) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    Button(
+                        onClick = { viewModel.startDeviceFlowAuth() },
+                        enabled = !deviceAuthPolling,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("initiate_oauth_button")
+                    ) {
+                        if (deviceAuthPolling) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(Icons.Filled.Lock, contentDescription = "Lock icon")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sign In with GitHub")
+                        }
+                    }
                 } else {
-                    Icon(Icons.Filled.Lock, contentDescription = "Auth", modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Authenticate & Synchronize")
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "YOUR LOGIN CODE",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+
+                            Text(
+                                text = deviceUserCode ?: "",
+                                style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+
+                            Button(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("GitHub Activation Code", deviceUserCode)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Code copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Copy Code")
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "1. Click the button below to open GitHub.\n2. Paste the activation code above and click Authorize.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deviceVerificationUri ?: "https://github.com/login/device"))
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("open_activation_page_button")
+                    ) {
+                        Icon(Icons.Filled.OpenInNew, contentDescription = "Open link")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Open Activation Page")
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Waiting for authorization on GitHub...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                    TextButton(
+                        onClick = { viewModel.cancelDeviceFlowAuth() },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Filled.Cancel, contentDescription = "Cancel")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Cancel Sign In")
+                    }
+                }
+            } else {
+                // Personal Access Token (PAT) Login
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("GitHub Personal Access Token (PAT)") },
+                    placeholder = { Text("github_pat_...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("github_token_input"),
+                    singleLine = true
+                )
+
+                // Owner & Repo Configs
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = owner,
+                        onValueChange = { owner = it },
+                        label = { Text("Repo Owner") },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("repo_owner_input"),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = repo,
+                        onValueChange = { repo = it },
+                        label = { Text("Repo Name") },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("repo_name_input"),
+                        singleLine = true
+                    )
+                }
+
+                OutlinedTextField(
+                    value = branch,
+                    onValueChange = { branch = it },
+                    label = { Text("Branch") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("repo_branch_input"),
+                    singleLine = true
+                )
+
+                Text(
+                    text = "Repository Presets",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                    modifier = Modifier.align(Alignment.Start)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val uBlockSelected = owner == "uBlockOrigin" && repo == "uAssets"
+                    val blazeSelected = owner == "BlazeFTL" && repo == "My-Filters"
+                    
+                    Button(
+                        onClick = {
+                            owner = "uBlockOrigin"
+                            repo = "uAssets"
+                            branch = "master"
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (uBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (uBlockSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("uBlock Assets", style = MaterialTheme.typography.labelMedium)
+                    }
+                    
+                    Button(
+                        onClick = {
+                            owner = "BlazeFTL"
+                            repo = "My-Filters"
+                            branch = "master" // Auto-detect/corrected branch is master
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (blazeSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (blazeSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("BlazeFTL Filters", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                Button(
+                    onClick = { viewModel.saveGitHubCredentials(token, owner, repo, branch) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("authenticate_button"),
+                    enabled = token.isNotEmpty() && !isSyncing
+                ) {
+                    if (isSyncing) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(Icons.Filled.Lock, contentDescription = "Auth", modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Authenticate & Synchronize")
+                    }
                 }
             }
 
@@ -316,7 +468,12 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
     val errorMessage by viewModel.errorMessage.collectAsState()
     val successMessage by viewModel.successMessage.collectAsState()
 
+    val pinnedFiles by viewModel.pinnedFiles.collectAsState()
+    val fileSortOrder by viewModel.fileSortOrder.collectAsState()
+    val modifiedFiles by viewModel.modifiedFiles.collectAsState()
+
     val context = LocalContext.current
+    var showSwitchRepoDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -332,43 +489,141 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = LightSurface,
-                modifier = Modifier
-                    .width(320.dp)
-                    .fillMaxHeight()
-            ) {
-                FileBrowserPanel(
-                    filesList = filesList,
-                    isSyncing = isSyncing,
-                    onFileClick = { path ->
-                        viewModel.openFileInTab(path)
-                        coroutineScope.launch { drawerState.close() }
-                    },
-                    onSyncClick = { viewModel.syncRepositoryTree() }
-                )
-            }
-        }
-    ) {
-        Scaffold(
-            modifier = Modifier.statusBarsPadding(),
-            topBar = {
-                WorkspaceTopBar(
-                    activeTabPath = activeTabPath,
-                    openTabs = openTabs,
-                    isSyncing = isSyncing,
-                    onMenuClick = { coroutineScope.launch { drawerState.open() } },
-                    onTabSelect = { viewModel.selectTab(it) },
-                    onTabClose = { viewModel.closeTab(it) },
-                    onCommitClick = { viewModel.commitAndPushActiveTab() },
-                    onLogoutClick = { viewModel.logout() }
-                )
+    if (showSwitchRepoDialog) {
+        val currentOwner by viewModel.repoOwner.collectAsState()
+        val currentRepo by viewModel.repoName.collectAsState()
+        val currentBranch by viewModel.branchName.collectAsState()
+        
+        var dialogOwner by remember { mutableStateOf(currentOwner) }
+        var dialogRepo by remember { mutableStateOf(currentRepo) }
+        var dialogBranch by remember { mutableStateOf(currentBranch) }
+        
+        AlertDialog(
+            onDismissRequest = { showSwitchRepoDialog = false },
+            title = { Text("Switch Repository") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Enter GitHub repository details to switch your active workspace directory.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    
+                    OutlinedTextField(
+                        value = dialogOwner,
+                        onValueChange = { dialogOwner = it },
+                        label = { Text("Owner") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = dialogRepo,
+                        onValueChange = { dialogRepo = it },
+                        label = { Text("Repository Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = dialogBranch,
+                        onValueChange = { dialogBranch = it },
+                        label = { Text("Branch") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Presets:", style = MaterialTheme.typography.labelLarge)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Button(
+                            onClick = {
+                                dialogOwner = "uBlockOrigin"
+                                dialogRepo = "uAssets"
+                                dialogBranch = "master"
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("uBlock Assets", style = MaterialTheme.typography.labelSmall)
+                        }
+                        
+                        Button(
+                            onClick = {
+                                dialogOwner = "BlazeFTL"
+                                dialogRepo = "My-Filters"
+                                dialogBranch = "master"
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("BlazeFTL Filters", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
             },
-            containerColor = LightBg
-        ) { innerPadding ->
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSwitchRepoDialog = false
+                        viewModel.updateRepositorySelection(dialogOwner, dialogRepo, dialogBranch)
+                    }
+                ) {
+                    Text("Switch")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSwitchRepoDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+    ) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet(
+                    drawerContainerColor = LightSurface,
+                    modifier = Modifier
+                        .width(320.dp)
+                        .fillMaxHeight()
+                ) {
+                    FileBrowserPanel(
+                        filesList = filesList,
+                        isSyncing = isSyncing,
+                        pinnedFiles = pinnedFiles,
+                        fileSortOrder = fileSortOrder,
+                        modifiedFiles = modifiedFiles,
+                        onFileClick = { path ->
+                            viewModel.openFileInTab(path)
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        onSyncClick = { viewModel.syncRepositoryTree() },
+                        onPinToggle = { viewModel.togglePinFile(it) },
+                        onSortOrderChange = { viewModel.setFileSortOrder(it) }
+                    )
+                }
+            }
+        ) {
+            Scaffold(
+                topBar = {
+                    WorkspaceTopBar(
+                        activeTabPath = activeTabPath,
+                        openTabs = openTabs,
+                        isSyncing = isSyncing,
+                        onMenuClick = { coroutineScope.launch { drawerState.open() } },
+                        onTabSelect = { viewModel.selectTab(it) },
+                        onTabClose = { viewModel.closeTab(it) },
+                        onCommitClick = { viewModel.commitAndPushActiveTab() },
+                        onLogoutClick = { viewModel.logout() },
+                        onSwitchRepoClick = { showSwitchRepoDialog = true }
+                    )
+                },
+                containerColor = LightBg
+            ) { innerPadding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -388,6 +643,7 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
             }
         }
     }
+}
 }
 
 @Composable
@@ -433,16 +689,37 @@ fun EmptyWorkspaceState(onOpenDrawer: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FileBrowserPanel(
     filesList: List<GitTreeEntry>,
     isSyncing: Boolean,
+    pinnedFiles: Set<String>,
+    fileSortOrder: FileSortOrder,
+    modifiedFiles: Set<String>,
     onFileClick: (String) -> Unit,
-    onSyncClick: () -> Unit
+    onSyncClick: () -> Unit,
+    onPinToggle: (String) -> Unit,
+    onSortOrderChange: (FileSortOrder) -> Unit
 ) {
     var searchFilter by remember { mutableStateOf("") }
-    val filteredFiles = remember(filesList, searchFilter) {
-        filesList.filter { it.path.contains(searchFilter, ignoreCase = true) }
+    
+    val sortedAndFilteredFiles = remember(filesList, searchFilter, pinnedFiles, fileSortOrder, modifiedFiles) {
+        val filtered = filesList.filter { it.path.contains(searchFilter, ignoreCase = true) }
+        when (fileSortOrder) {
+            FileSortOrder.ALPHABETICAL -> {
+                filtered.sortedBy { it.path.substringAfterLast('/') }
+            }
+            FileSortOrder.PINNED_FIRST -> {
+                filtered.sortedWith(compareByDescending<GitTreeEntry> { pinnedFiles.contains(it.path) }
+                    .thenBy { it.path.substringAfterLast('/') })
+            }
+            FileSortOrder.MODIFIED_FIRST -> {
+                filtered.sortedWith(compareByDescending<GitTreeEntry> { modifiedFiles.contains(it.path) }
+                    .thenByDescending { pinnedFiles.contains(it.path) }
+                    .thenBy { it.path.substringAfterLast('/') })
+            }
+        }
     }
 
     Column(
@@ -487,9 +764,53 @@ fun FileBrowserPanel(
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search icon") }
         )
 
+        // Sorting Option Chips
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Sort:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            
+            AssistChip(
+                onClick = { onSortOrderChange(FileSortOrder.PINNED_FIRST) },
+                label = { Text("Pinned", style = MaterialTheme.typography.labelSmall) },
+                leadingIcon = { Icon(Icons.Filled.PushPin, contentDescription = null, modifier = Modifier.size(12.dp)) },
+                colors = if (fileSortOrder == FileSortOrder.PINNED_FIRST) {
+                    AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer, labelColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                } else {
+                    AssistChipDefaults.assistChipColors()
+                },
+                border = null
+            )
+            
+            AssistChip(
+                onClick = { onSortOrderChange(FileSortOrder.MODIFIED_FIRST) },
+                label = { Text("Modified", style = MaterialTheme.typography.labelSmall) },
+                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(12.dp)) },
+                colors = if (fileSortOrder == FileSortOrder.MODIFIED_FIRST) {
+                    AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer, labelColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                } else {
+                    AssistChipDefaults.assistChipColors()
+                },
+                border = null
+            )
+            
+            AssistChip(
+                onClick = { onSortOrderChange(FileSortOrder.ALPHABETICAL) },
+                label = { Text("A-Z", style = MaterialTheme.typography.labelSmall) },
+                colors = if (fileSortOrder == FileSortOrder.ALPHABETICAL) {
+                    AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer, labelColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                } else {
+                    AssistChipDefaults.assistChipColors()
+                },
+                border = null
+            )
+        }
+
         Divider(color = LightBorder)
 
-        if (filteredFiles.isEmpty()) {
+        if (sortedAndFilteredFiles.isEmpty()) {
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(
                     text = if (isSyncing) "Syncing repository..." else "No files found. Try syncing.",
@@ -505,29 +826,64 @@ fun FileBrowserPanel(
                     .testTag("file_browser_list"),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                itemsIndexed(filteredFiles) { _, entry ->
+                itemsIndexed(sortedAndFilteredFiles) { _, entry ->
+                    val isPinned = pinnedFiles.contains(entry.path)
+                    val isModified = modifiedFiles.contains(entry.path)
+                    
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(6.dp))
                             .clickable { onFileClick(entry.path) }
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(start = 8.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.Description,
-                            contentDescription = "File",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
+                            imageVector = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.Description,
+                            contentDescription = "File icon",
+                            tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable { onPinToggle(entry.path) }
                         )
+                        
+                        Spacer(modifier = Modifier.width(8.dp))
+
                         Text(
                             text = entry.path,
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+
+                        if (isModified) {
+                            Surface(
+                                color = Color(0xFFF59E0B),
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp)
+                            ) {
+                                Text(
+                                    text = "MOD",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { onPinToggle(entry.path) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                contentDescription = "Pin File",
+                                tint = if (isPinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -544,7 +900,8 @@ fun WorkspaceTopBar(
     onTabSelect: (String) -> Unit,
     onTabClose: (String) -> Unit,
     onCommitClick: () -> Unit,
-    onLogoutClick: () -> Unit
+    onLogoutClick: () -> Unit,
+    onSwitchRepoClick: () -> Unit
 ) {
     Surface(
         color = LightSurface,
@@ -592,14 +949,39 @@ fun WorkspaceTopBar(
                     }
                 }
 
-                IconButton(onClick = onLogoutClick, modifier = Modifier.testTag("logout_button")) {
-                    Icon(Icons.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                var showMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("menu_dropdown_button")) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More Options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Switch Repository") },
+                            onClick = {
+                                showMenu = false
+                                onSwitchRepoClick()
+                            },
+                            leadingIcon = { Icon(Icons.Filled.SwapHoriz, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Logout") },
+                            onClick = {
+                                showMenu = false
+                                onLogoutClick()
+                            },
+                            leadingIcon = { Icon(Icons.Filled.ExitToApp, contentDescription = null) }
+                        )
+                    }
                 }
             }
 
             if (openTabs.isNotEmpty()) {
                 ScrollableTabRow(
-                    selectedTabIndex = openTabs.indexOfFirst { it.path == activeTabPath }.coerceAtLeast(0),
+                    selectedTabIndex = openTabs.indexOfFirst { it.path == activeTabPath }
+                        .coerceIn(0, (openTabs.size - 1).coerceAtLeast(0)),
                     edgePadding = 12.dp,
                     containerColor = LightSurface,
                     contentColor = MaterialTheme.colorScheme.onSurface,

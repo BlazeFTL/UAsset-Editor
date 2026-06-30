@@ -17,6 +17,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -38,10 +42,16 @@ data class SearchMatch(
     val endChar: Int
 )
 
+enum class FileSortOrder {
+    ALPHABETICAL,
+    PINNED_FIRST,
+    MODIFIED_FIRST
+}
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sharedPrefs = application.getSharedPreferences("filter_editor_prefs", Context.MODE_PRIVATE)
-    private val repository: FilterFileRepository
+    private val repository = FilterFileRepository(AppDatabase.getDatabase(application).filterFileDao())
     private val gitHubService = GitHubService.create()
 
     // Screen navigation state
@@ -131,9 +141,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _autoIndent = MutableStateFlow(false) // Filter lists shouldn't auto-indent
     val autoIndent: StateFlow<Boolean> = _autoIndent.asStateFlow()
 
+    // Sorting and Pinning
+    private val _pinnedFiles = MutableStateFlow<Set<String>>(emptySet())
+    val pinnedFiles: StateFlow<Set<String>> = _pinnedFiles.asStateFlow()
+
+    private val _fileSortOrder = MutableStateFlow(FileSortOrder.PINNED_FIRST)
+    val fileSortOrder: StateFlow<FileSortOrder> = _fileSortOrder.asStateFlow()
+
+    val modifiedFiles: StateFlow<Set<String>> = repository.allFiles
+        .map { files -> files.filter { it.isModified }.map { it.path }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    fun togglePinFile(path: String) {
+        val current = _pinnedFiles.value.toMutableSet()
+        if (current.contains(path)) {
+            current.remove(path)
+        } else {
+            current.add(path)
+        }
+        _pinnedFiles.value = current
+        sharedPrefs.edit().putStringSet("pinned_files", current).apply()
+    }
+
+    fun setFileSortOrder(order: FileSortOrder) {
+        _fileSortOrder.value = order
+        sharedPrefs.edit().putString("file_sort_order", order.name).apply()
+    }
+
+    // GitHub Device flow properties
+    private val _deviceUserCode = MutableStateFlow<String?>(null)
+    val deviceUserCode: StateFlow<String?> = _deviceUserCode.asStateFlow()
+
+    private val _deviceVerificationUri = MutableStateFlow<String?>(null)
+    val deviceVerificationUri: StateFlow<String?> = _deviceVerificationUri.asStateFlow()
+
+    private val _deviceAuthPolling = MutableStateFlow(false)
+    val deviceAuthPolling: StateFlow<Boolean> = _deviceAuthPolling.asStateFlow()
+
+    private val _deviceAuthError = MutableStateFlow<String?>(null)
+    val deviceAuthError: StateFlow<String?> = _deviceAuthError.asStateFlow()
+
+    private var deviceFlowJob: kotlinx.coroutines.Job? = null
+
     init {
-        val database = AppDatabase.getDatabase(application)
-        repository = FilterFileRepository(database.filterFileDao())
+        // Load saved pinned files
+        val savedPinned = sharedPrefs.getStringSet("pinned_files", emptySet()) ?: emptySet()
+        _pinnedFiles.value = savedPinned
+
+        // Load saved sort order
+        val savedSort = sharedPrefs.getString("file_sort_order", FileSortOrder.PINNED_FIRST.name)
+        _fileSortOrder.value = try {
+            FileSortOrder.valueOf(savedSort ?: FileSortOrder.PINNED_FIRST.name)
+        } catch (e: Exception) {
+            FileSortOrder.PINNED_FIRST
+        }
 
         // Load token and repository configurations from shared preferences
         val savedToken = sharedPrefs.getString("github_token", null)
@@ -245,6 +306,82 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _activeTabPath.value = null
     }
 
+    fun startDeviceFlowAuth(clientId: String = "Ov23ct4F0VqT2U9Ld8p2") {
+        deviceFlowJob?.cancel()
+        _deviceAuthPolling.value = true
+        _deviceAuthError.value = null
+        _deviceUserCode.value = null
+        _deviceVerificationUri.value = null
+
+        deviceFlowJob = viewModelScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    gitHubService.getDeviceCode(clientId = clientId)
+                }
+                
+                _deviceUserCode.value = response.userCode
+                _deviceVerificationUri.value = response.verificationUri
+                
+                val intervalMs = (response.interval * 1000L).coerceAtLeast(1000L)
+                val expiresAt = System.currentTimeMillis() + (response.expiresIn * 1000L)
+                
+                // Start polling
+                while (System.currentTimeMillis() < expiresAt) {
+                    kotlinx.coroutines.delay(intervalMs)
+                    try {
+                        val tokenResponse = withContext(Dispatchers.IO) {
+                            gitHubService.getAccessToken(clientId = clientId, deviceCode = response.deviceCode)
+                        }
+                        
+                        if (tokenResponse.accessToken != null) {
+                            // Succeeded! Save credentials
+                            saveGitHubCredentials(
+                                token = tokenResponse.accessToken,
+                                owner = _repoOwner.value,
+                                repo = _repoName.value,
+                                branch = _branchName.value
+                            )
+                            break
+                        } else if (tokenResponse.error != "authorization_pending") {
+                            _deviceAuthError.value = tokenResponse.errorDescription ?: "Auth failed: ${tokenResponse.error}"
+                            break
+                        }
+                    } catch (e: Exception) {
+                        // ignore network transient errors during polling, or if cancelled
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Device flow failed", e)
+                _deviceAuthError.value = "Failed to start login: ${e.localizedMessage}"
+            } finally {
+                _deviceAuthPolling.value = false
+            }
+        }
+    }
+
+    fun cancelDeviceFlowAuth() {
+        deviceFlowJob?.cancel()
+        deviceFlowJob = null
+        _deviceAuthPolling.value = false
+        _deviceUserCode.value = null
+        _deviceVerificationUri.value = null
+    }
+
+    fun updateRepositorySelection(owner: String, repo: String, branch: String) {
+        _repoOwner.value = owner
+        _repoName.value = repo
+        _branchName.value = branch
+        
+        sharedPrefs.edit().apply {
+            putString("repo_owner", owner)
+            putString("repo_name", repo)
+            putString("repo_branch", branch)
+        }.apply()
+        
+        // Sync new repository files
+        syncRepositoryTree()
+    }
+
     fun clearMessage() {
         _errorMessage.value = null
         _successMessage.value = null
@@ -265,7 +402,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun syncRepositoryTree() {
         val owner = _repoOwner.value
         val repo = _repoName.value
-        val branch = _branchName.value
+        var branch = _branchName.value
         val token = _githubToken.value
 
         _isSyncing.value = true
@@ -274,8 +411,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val authHeader = token?.let { if (it.startsWith("token ")) it else "token $it" }
-                val response = withContext(Dispatchers.IO) {
-                    gitHubService.getGitTree(authHeader, owner, repo, branch, recursive = 1)
+
+                if (branch.isEmpty()) {
+                    try {
+                        val repoInfo = withContext(Dispatchers.IO) {
+                            gitHubService.getRepositoryInfo(authHeader, owner, repo)
+                        }
+                        branch = repoInfo.defaultBranch
+                        _branchName.value = branch
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Failed to resolve default branch, falling back to master", e)
+                        branch = "master"
+                    }
+                }
+
+                val response = try {
+                    withContext(Dispatchers.IO) {
+                        gitHubService.getGitTree(authHeader, owner, repo, branch, recursive = 1)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Fetch git tree failed for branch $branch. Trying to auto-resolve default branch...", e)
+                    val repoInfo = withContext(Dispatchers.IO) {
+                        gitHubService.getRepositoryInfo(authHeader, owner, repo)
+                    }
+                    branch = repoInfo.defaultBranch
+                    _branchName.value = branch
+                    withContext(Dispatchers.IO) {
+                        gitHubService.getGitTree(authHeader, owner, repo, branch, recursive = 1)
+                    }
                 }
 
                 // Filter files of interest dynamically based on user requirements
@@ -291,7 +454,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         // "I Wish To Add https://github.com/BlazeFTL/My-Filters (only .txt and .html .yaml files"
                         path.endsWith(".txt", ignoreCase = true) ||
                         path.endsWith(".html", ignoreCase = true) ||
-                        path.endsWith(".yaml", ignoreCase = true)
+                        path.endsWith(".yaml", ignoreCase = true) ||
+                        path.endsWith(".yml", ignoreCase = true)
                     }
                 }
 

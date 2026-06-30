@@ -7,12 +7,39 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Headers
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Url
 import java.util.concurrent.TimeUnit
 
 interface GitHubService {
+
+    @POST
+    @Headers("Accept: application/json")
+    suspend fun getDeviceCode(
+        @Url url: String = "https://github.com/login/device/code",
+        @Query("client_id") clientId: String,
+        @Query("scope") scope: String = "repo,user"
+    ): DeviceCodeResponse
+
+    @POST
+    @Headers("Accept: application/json")
+    suspend fun getAccessToken(
+        @Url url: String = "https://github.com/login/oauth/access_token",
+        @Query("client_id") clientId: String,
+        @Query("device_code") deviceCode: String,
+        @Query("grant_type") grantType: String = "urn:ietf:params:oauth:grant-type:device_code"
+    ): AccessTokenResponse
+
+    @GET("repos/{owner}/{repo}")
+    suspend fun getRepositoryInfo(
+        @Header("Authorization") authHeader: String?,
+        @Path("owner") owner: String,
+        @Path("repo") repo: String
+    ): RepositoryResponse
 
     @GET("user")
     suspend fun getAuthenticatedUser(

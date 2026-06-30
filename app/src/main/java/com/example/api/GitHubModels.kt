@@ -65,3 +65,26 @@ data class UserResponse(
     @Json(name = "login") val login: String,
     @Json(name = "avatar_url") val avatarUrl: String?
 )
+
+@JsonClass(generateAdapter = true)
+data class DeviceCodeResponse(
+    @Json(name = "device_code") val deviceCode: String,
+    @Json(name = "user_code") val userCode: String,
+    @Json(name = "verification_uri") val verificationUri: String,
+    @Json(name = "expires_in") val expiresIn: Int,
+    @Json(name = "interval") val interval: Int
+)
+
+@JsonClass(generateAdapter = true)
+data class AccessTokenResponse(
+    @Json(name = "access_token") val accessToken: String? = null,
+    @Json(name = "token_type") val tokenType: String? = null,
+    @Json(name = "scope") val scope: String? = null,
+    @Json(name = "error") val error: String? = null,
+    @Json(name = "error_description") val errorDescription: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class RepositoryResponse(
+    @Json(name = "default_branch") val defaultBranch: String
+)
