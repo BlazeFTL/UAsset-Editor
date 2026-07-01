@@ -1433,7 +1433,12 @@ fun EditorSettingsToolbar(
             )
         }
 
-        VerticalDivider()
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height(24.dp)
+                .background(LightBorder)
+        )
 
         IconButton(
             onClick = onWordWrapToggle,
