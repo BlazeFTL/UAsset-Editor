@@ -1118,11 +1118,7 @@ fun EditorWorkspace(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Find & Replace Panel (Collapsible)
-            AnimatedVisibility(
-                visible = isSearchOpen,
-                enter = slideInVertically() + fadeIn(),
-                exit = slideOutVertically() + fadeOut()
-            ) {
+            if (isSearchOpen) {
                 FindReplacePanel(
                     query = searchQuery,
                     replaceQuery = replaceQuery,
@@ -1150,67 +1146,73 @@ fun EditorWorkspace(
                 )
             }
 
-            // Quick Operations / Shortcuts bar
-            EditorSettingsToolbar(
-                wordWrap = wordWrap,
-                onWordWrapToggle = { viewModel.toggleWordWrap() },
-                onFindToggle = { viewModel.toggleSearch() },
-                onUndoClick = { viewModel.undo() },
-                onRedoClick = { viewModel.redo() },
-                hasUndo = tabState.undoStack.isNotEmpty(),
-                hasRedo = tabState.redoStack.isNotEmpty(),
-                activeLineIndex = tabState.activeLineIndex,
-                linesCount = tabState.lines.size,
-                onGoToLine = { lineNum ->
-                    val index = (lineNum - 1).coerceIn(0, tabState.lines.size - 1)
-                    coroutineScope.launch {
-                        lazyListState.scrollToItem(index)
-                        viewModel.selectLine(index)
-                    }
-                },
-                onZoomIn = { viewModel.setFontSize(fontSize + 1f) },
-                onZoomOut = { viewModel.setFontSize(fontSize - 1f) },
-                onScrollToTop = {
-                    coroutineScope.launch {
-                        lazyListState.scrollToItem(0)
-                        viewModel.selectLine(0)
-                    }
-                },
-                onScrollToBottom = {
-                    coroutineScope.launch {
-                        val lastIdx = (tabState.lines.size - 1).coerceAtLeast(0)
-                        lazyListState.scrollToItem(lastIdx)
-                        viewModel.selectLine(lastIdx)
-                    }
-                }
-            )
-
-            // Keyboard/Auxiliary Shortcut Action Bar moved above the editor
-            if (tabState.activeLineIndex != null) {
-                KeyboardShortcutBar(
-                    onDuplicate = { viewModel.duplicateActiveLine() },
-                    onDelete = { viewModel.deleteActiveLine() },
-                    onMoveUp = {
-                        viewModel.moveActiveLineUp()
+            // Group toolbars sequentially with a solid white background to guarantee 
+            // no vertical gap exists between them
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(LightSurface)
+            ) {
+                EditorSettingsToolbar(
+                    wordWrap = wordWrap,
+                    onWordWrapToggle = { viewModel.toggleWordWrap() },
+                    onFindToggle = { viewModel.toggleSearch() },
+                    onUndoClick = { viewModel.undo() },
+                    onRedoClick = { viewModel.redo() },
+                    hasUndo = tabState.undoStack.isNotEmpty(),
+                    hasRedo = tabState.redoStack.isNotEmpty(),
+                    activeLineIndex = tabState.activeLineIndex,
+                    linesCount = tabState.lines.size,
+                    onGoToLine = { lineNum ->
+                        val index = (lineNum - 1).coerceIn(0, tabState.lines.size - 1)
                         coroutineScope.launch {
-                            val active = tabState.activeLineIndex ?: 0
-                            if (active > 0) lazyListState.scrollToItem(active - 1)
+                            lazyListState.scrollToItem(index)
+                            viewModel.selectLine(index)
                         }
                     },
-                    onMoveDown = {
-                        viewModel.moveActiveLineDown()
+                    onZoomIn = { viewModel.setFontSize(fontSize + 1f) },
+                    onZoomOut = { viewModel.setFontSize(fontSize - 1f) },
+                    onScrollToTop = {
                         coroutineScope.launch {
-                            val active = tabState.activeLineIndex ?: 0
-                            if (active < tabState.lines.size - 1) lazyListState.scrollToItem(active + 1)
+                            lazyListState.scrollToItem(0)
+                            viewModel.selectLine(0)
                         }
                     },
-                    onInsertAbove = { viewModel.insertLineAbove() },
-                    onInsertBelow = { viewModel.insertLineBelow() },
-                    onDeselect = { viewModel.selectLine(null); focusManager.clearFocus() }
+                    onScrollToBottom = {
+                        coroutineScope.launch {
+                            val lastIdx = (tabState.lines.size - 1).coerceAtLeast(0)
+                            lazyListState.scrollToItem(lastIdx)
+                            viewModel.selectLine(lastIdx)
+                        }
+                    }
                 )
-            }
 
-            Divider(color = LightBorder)
+                if (tabState.activeLineIndex != null) {
+                    KeyboardShortcutBar(
+                        onDuplicate = { viewModel.duplicateActiveLine() },
+                        onDelete = { viewModel.deleteActiveLine() },
+                        onMoveUp = {
+                            viewModel.moveActiveLineUp()
+                            coroutineScope.launch {
+                                val active = tabState.activeLineIndex ?: 0
+                                if (active > 0) lazyListState.scrollToItem(active - 1)
+                            }
+                        },
+                        onMoveDown = {
+                            viewModel.moveActiveLineDown()
+                            coroutineScope.launch {
+                                val active = tabState.activeLineIndex ?: 0
+                                if (active < tabState.lines.size - 1) lazyListState.scrollToItem(active + 1)
+                            }
+                        },
+                        onInsertAbove = { viewModel.insertLineAbove() },
+                        onInsertBelow = { viewModel.insertLineBelow() },
+                        onDeselect = { viewModel.selectLine(null); focusManager.clearFocus() }
+                    )
+                }
+
+                Divider(color = LightBorder)
+            }
 
             // Dynamic width computation for line numbers to prevent layout shifting
             val lineNumbersWidth = remember(tabState.lines.size) {
