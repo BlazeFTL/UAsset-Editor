@@ -546,7 +546,14 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
             }
         ) {
             Scaffold(
-                topBar = {
+                containerColor = LightBg,
+                contentWindowInsets = WindowInsets(0, 0, 0, 0)
+            ) { innerPadding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                ) {
                     WorkspaceTopBar(
                         activeTabPath = activeTabPath,
                         openTabs = openTabs,
@@ -564,29 +571,28 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
                         repoName = repoName,
                         branchName = branchName
                     )
-                },
-                containerColor = LightBg
-            ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                if (activeTabPath == null) {
-                    EmptyWorkspaceState { coroutineScope.launch { drawerState.open() } }
-                } else {
-                    val activeTab = openTabs.find { it.path == activeTabPath }
-                    if (activeTab != null) {
-                        EditorWorkspace(
-                            tabState = activeTab,
-                            viewModel = viewModel
-                        )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f)
+                    ) {
+                        if (activeTabPath == null) {
+                            EmptyWorkspaceState { coroutineScope.launch { drawerState.open() } }
+                        } else {
+                            val activeTab = openTabs.find { it.path == activeTabPath }
+                            if (activeTab != null) {
+                                EditorWorkspace(
+                                    tabState = activeTab,
+                                    viewModel = viewModel
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
-}
 }
 
 @Composable
