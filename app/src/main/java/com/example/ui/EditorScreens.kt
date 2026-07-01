@@ -574,7 +574,7 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
 
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
                             .weight(1f)
                     ) {
                         if (activeTabPath == null) {
@@ -1187,31 +1187,6 @@ fun EditorWorkspace(
                 }
             )
 
-            if (tabState.activeLineIndex != null) {
-                Divider(color = LightBorder)
-                KeyboardShortcutBar(
-                    onDuplicate = { viewModel.duplicateActiveLine() },
-                    onDelete = { viewModel.deleteActiveLine() },
-                    onMoveUp = {
-                        viewModel.moveActiveLineUp()
-                        coroutineScope.launch {
-                            val active = tabState.activeLineIndex ?: 0
-                            if (active > 0) lazyListState.scrollToItem(active - 1)
-                        }
-                    },
-                    onMoveDown = {
-                        viewModel.moveActiveLineDown()
-                        coroutineScope.launch {
-                            val active = tabState.activeLineIndex ?: 0
-                            if (active < tabState.lines.size - 1) lazyListState.scrollToItem(active + 1)
-                        }
-                    },
-                    onInsertAbove = { viewModel.insertLineAbove() },
-                    onInsertBelow = { viewModel.insertLineBelow() },
-                    onDeselect = { viewModel.selectLine(null); focusManager.clearFocus() }
-                )
-            }
-
             Divider(color = LightBorder)
         }
 
@@ -1560,79 +1535,6 @@ fun EditorSettingsToolbar(
             },
             containerColor = LightSurface
         )
-    }
-}
-
-@Composable
-fun KeyboardShortcutBar(
-    onDuplicate: () -> Unit,
-    onDelete: () -> Unit,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onInsertAbove: () -> Unit,
-    onInsertBelow: () -> Unit,
-    onDeselect: () -> Unit
-) {
-    Surface(
-        color = LightSurface,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            AssistChip(
-                onClick = onInsertAbove,
-                label = { Text("Insert Above", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(14.dp)) }
-            )
-
-            AssistChip(
-                onClick = onInsertBelow,
-                label = { Text("Insert Below", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(14.dp)) }
-            )
-
-            AssistChip(
-                onClick = onDuplicate,
-                label = { Text("Duplicate", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp)) }
-            )
-
-            AssistChip(
-                onClick = onDelete,
-                label = { Text("Delete Line", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(14.dp)) }
-            )
-
-            AssistChip(
-                onClick = onMoveUp,
-                label = { Text("Move Up", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp)) }
-            )
-
-            AssistChip(
-                onClick = onMoveDown,
-                label = { Text("Move Down", fontSize = 11.sp) },
-                leadingIcon = { Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(14.dp)) }
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = onDeselect,
-                contentPadding = PaddingValues(horizontal = 12.dp),
-                modifier = Modifier
-                    .height(32.dp)
-                    .testTag("done_editing_button")
-            ) {
-                Text("Done", fontSize = 11.sp)
-            }
-        }
     }
 }
 
