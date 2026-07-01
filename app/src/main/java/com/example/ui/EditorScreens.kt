@@ -1404,10 +1404,11 @@ fun EditorSettingsToolbar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(56.dp)
             .background(LightSurface)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         IconButton(
             onClick = onUndoClick,
