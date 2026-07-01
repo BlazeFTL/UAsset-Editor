@@ -1077,9 +1077,10 @@ fun EditorWorkspace(
         )
     }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(LightBg)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -1116,103 +1117,95 @@ fun EditorWorkspace(
                 }
             }
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Find & Replace Panel (Collapsible)
-            if (isSearchOpen) {
-                FindReplacePanel(
-                    query = searchQuery,
-                    replaceQuery = replaceQuery,
-                    matchesCount = searchMatches.size,
-                    currentMatchIdx = currentMatchIndex,
-                    isRegex = isRegexSearch,
-                    isCase = isCaseSensitiveSearch,
-                    onQueryChange = { viewModel.setSearchQuery(it) },
-                    onReplaceQueryChange = { viewModel.setReplaceQuery(it) },
-                    onNext = {
-                        viewModel.nextMatch()?.let { match ->
-                            coroutineScope.launch { lazyListState.scrollToItem(match.lineIndex) }
-                        }
-                    },
-                    onPrev = {
-                        viewModel.prevMatch()?.let { match ->
-                            coroutineScope.launch { lazyListState.scrollToItem(match.lineIndex) }
-                        }
-                    },
-                    onReplace = { viewModel.replaceCurrentMatch() },
-                    onReplaceAll = { viewModel.replaceAllMatches() },
-                    onToggleRegex = { viewModel.toggleRegexSearch() },
-                    onToggleCase = { viewModel.toggleCaseSensitiveSearch() },
-                    onClose = { viewModel.toggleSearch() }
-                )
-            }
-
-            // Group toolbars sequentially with a solid white background to guarantee 
-            // no vertical gap exists between them
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(LightSurface)
-            ) {
-                EditorSettingsToolbar(
-                    wordWrap = wordWrap,
-                    onWordWrapToggle = { viewModel.toggleWordWrap() },
-                    onFindToggle = { viewModel.toggleSearch() },
-                    onUndoClick = { viewModel.undo() },
-                    onRedoClick = { viewModel.redo() },
-                    hasUndo = tabState.undoStack.isNotEmpty(),
-                    hasRedo = tabState.redoStack.isNotEmpty(),
-                    activeLineIndex = tabState.activeLineIndex,
-                    linesCount = tabState.lines.size,
-                    onGoToLine = { lineNum ->
-                        val index = (lineNum - 1).coerceIn(0, tabState.lines.size - 1)
-                        coroutineScope.launch {
-                            lazyListState.scrollToItem(index)
-                            viewModel.selectLine(index)
-                        }
-                    },
-                    onZoomIn = { viewModel.setFontSize(fontSize + 1f) },
-                    onZoomOut = { viewModel.setFontSize(fontSize - 1f) },
-                    onScrollToTop = {
-                        coroutineScope.launch {
-                            lazyListState.scrollToItem(0)
-                            viewModel.selectLine(0)
-                        }
-                    },
-                    onScrollToBottom = {
-                        coroutineScope.launch {
-                            val lastIdx = (tabState.lines.size - 1).coerceAtLeast(0)
-                            lazyListState.scrollToItem(lastIdx)
-                            viewModel.selectLine(lastIdx)
-                        }
+        // Find & Replace Panel (Collapsible)
+        if (isSearchOpen) {
+            FindReplacePanel(
+                query = searchQuery,
+                replaceQuery = replaceQuery,
+                matchesCount = searchMatches.size,
+                currentMatchIdx = currentMatchIndex,
+                isRegex = isRegexSearch,
+                isCase = isCaseSensitiveSearch,
+                onQueryChange = { viewModel.setSearchQuery(it) },
+                onReplaceQueryChange = { viewModel.setReplaceQuery(it) },
+                onNext = {
+                    viewModel.nextMatch()?.let { match ->
+                        coroutineScope.launch { lazyListState.scrollToItem(match.lineIndex) }
                     }
-                )
+                },
+                onPrev = {
+                    viewModel.prevMatch()?.let { match ->
+                        coroutineScope.launch { lazyListState.scrollToItem(match.lineIndex) }
+                    }
+                },
+                onReplace = { viewModel.replaceCurrentMatch() },
+                onReplaceAll = { viewModel.replaceAllMatches() },
+                onToggleRegex = { viewModel.toggleRegexSearch() },
+                onToggleCase = { viewModel.toggleCaseSensitiveSearch() },
+                onClose = { viewModel.toggleSearch() }
+            )
+        }
 
-                if (tabState.activeLineIndex != null) {
-                    KeyboardShortcutBar(
-                        onDuplicate = { viewModel.duplicateActiveLine() },
-                        onDelete = { viewModel.deleteActiveLine() },
-                        onMoveUp = {
-                            viewModel.moveActiveLineUp()
-                            coroutineScope.launch {
-                                val active = tabState.activeLineIndex ?: 0
-                                if (active > 0) lazyListState.scrollToItem(active - 1)
-                            }
-                        },
-                        onMoveDown = {
-                            viewModel.moveActiveLineDown()
-                            coroutineScope.launch {
-                                val active = tabState.activeLineIndex ?: 0
-                                if (active < tabState.lines.size - 1) lazyListState.scrollToItem(active + 1)
-                            }
-                        },
-                        onInsertAbove = { viewModel.insertLineAbove() },
-                        onInsertBelow = { viewModel.insertLineBelow() },
-                        onDeselect = { viewModel.selectLine(null); focusManager.clearFocus() }
-                    )
+        // Sequential toolbars with no container layout to prevent any potential measurement gaps
+        EditorSettingsToolbar(
+            wordWrap = wordWrap,
+            onWordWrapToggle = { viewModel.toggleWordWrap() },
+            onFindToggle = { viewModel.toggleSearch() },
+            onUndoClick = { viewModel.undo() },
+            onRedoClick = { viewModel.redo() },
+            hasUndo = tabState.undoStack.isNotEmpty(),
+            hasRedo = tabState.redoStack.isNotEmpty(),
+            activeLineIndex = tabState.activeLineIndex,
+            linesCount = tabState.lines.size,
+            onGoToLine = { lineNum ->
+                val index = (lineNum - 1).coerceIn(0, tabState.lines.size - 1)
+                coroutineScope.launch {
+                    lazyListState.scrollToItem(index)
+                    viewModel.selectLine(index)
                 }
-
-                Divider(color = LightBorder)
+            },
+            onZoomIn = { viewModel.setFontSize(fontSize + 1f) },
+            onZoomOut = { viewModel.setFontSize(fontSize - 1f) },
+            onScrollToTop = {
+                coroutineScope.launch {
+                    lazyListState.scrollToItem(0)
+                    viewModel.selectLine(0)
+                }
+            },
+            onScrollToBottom = {
+                coroutineScope.launch {
+                    val lastIdx = (tabState.lines.size - 1).coerceAtLeast(0)
+                    lazyListState.scrollToItem(lastIdx)
+                    viewModel.selectLine(lastIdx)
+                }
             }
+        )
+
+        if (tabState.activeLineIndex != null) {
+            KeyboardShortcutBar(
+                onDuplicate = { viewModel.duplicateActiveLine() },
+                onDelete = { viewModel.deleteActiveLine() },
+                onMoveUp = {
+                    viewModel.moveActiveLineUp()
+                    coroutineScope.launch {
+                        val active = tabState.activeLineIndex ?: 0
+                        if (active > 0) lazyListState.scrollToItem(active - 1)
+                    }
+                },
+                onMoveDown = {
+                    viewModel.moveActiveLineDown()
+                    coroutineScope.launch {
+                        val active = tabState.activeLineIndex ?: 0
+                        if (active < tabState.lines.size - 1) lazyListState.scrollToItem(active + 1)
+                    }
+                },
+                onInsertAbove = { viewModel.insertLineAbove() },
+                onInsertBelow = { viewModel.insertLineBelow() },
+                onDeselect = { viewModel.selectLine(null); focusManager.clearFocus() }
+            )
+        }
+
+        Divider(color = LightBorder)
 
             // Dynamic width computation for line numbers to prevent layout shifting
             val lineNumbersWidth = remember(tabState.lines.size) {
@@ -1251,7 +1244,6 @@ fun EditorWorkspace(
             }
         }
     }
-}
 
 @Composable
 fun LineRow(
