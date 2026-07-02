@@ -543,7 +543,10 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
                         },
                         onSyncClick = { viewModel.syncRepositoryTree() },
                         onPinToggle = { viewModel.togglePinFile(it) },
-                        onSortOrderChange = { viewModel.setFileSortOrder(it) }
+                        onSortOrderChange = { viewModel.setFileSortOrder(it) },
+                        repoOwner = repoOwner,
+                        repoName = repoName,
+                        branchName = branchName
                     )
                 }
             }
@@ -652,7 +655,10 @@ fun FileBrowserPanel(
     onFileClick: (String) -> Unit,
     onSyncClick: () -> Unit,
     onPinToggle: (String) -> Unit,
-    onSortOrderChange: (FileSortOrder) -> Unit
+    onSortOrderChange: (FileSortOrder) -> Unit,
+    repoOwner: String,
+    repoName: String,
+    branchName: String
 ) {
     var searchFilter by remember { mutableStateOf("") }
     
@@ -680,6 +686,38 @@ fun FileBrowserPanel(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Active Repository:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "$repoOwner/$repoName",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Branch: $branchName",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                )
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -876,13 +914,22 @@ fun WorkspaceTopBar(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                Text(
-                    text = "uBlock Editor",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "uBlock Editor",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "$repoOwner/$repoName ($branchName)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
 
                 if (isSyncing) {
                     CircularProgressIndicator(
@@ -1058,6 +1105,7 @@ fun EditorWorkspace(
     val wordWrap by viewModel.wordWrap.collectAsState()
     val autoIndent by viewModel.autoIndent.collectAsState()
     val fontSize by viewModel.fontSize.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
 
     // Shared horizontal scroll state across lines when word wrapping is off
     val sharedHorizontalScrollState = rememberScrollState()
@@ -1199,7 +1247,9 @@ fun EditorWorkspace(
                         lazyListState.scrollToItem(lastIdx)
                         viewModel.selectLine(lastIdx)
                     }
-                }
+                },
+                onRefreshClick = { viewModel.refreshActiveFileContent() },
+                isSyncing = isSyncing
             )
 
             Divider(color = LightBorder)
@@ -1453,7 +1503,9 @@ fun EditorSettingsToolbar(
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onScrollToTop: () -> Unit,
-    onScrollToBottom: () -> Unit
+    onScrollToBottom: () -> Unit,
+    onRefreshClick: () -> Unit,
+    isSyncing: Boolean
 ) {
     var showGoToDialog by remember { mutableStateOf(false) }
 
@@ -1488,6 +1540,22 @@ fun EditorSettingsToolbar(
                 contentDescription = "Redo",
                 tint = if (hasRedo) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
             )
+        }
+
+        IconButton(
+            onClick = onRefreshClick,
+            enabled = !isSyncing,
+            modifier = Modifier.testTag("refresh_active_file_button")
+        ) {
+            if (isSyncing) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = "Refresh File Content",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
         Box(

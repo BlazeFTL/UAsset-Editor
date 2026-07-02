@@ -184,6 +184,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var deviceFlowJob: kotlinx.coroutines.Job? = null
     private var periodicSyncJob: kotlinx.coroutines.Job? = null
+    private var lastEnterTime = 0L
 
     init {
         // Load saved pinned files
@@ -852,6 +853,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun insertLineBelowWithText(index: Int, lineText: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastEnterTime < 250) {
+            Log.d("MainViewModel", "Ignoring rapid duplicate enter press (cooldown active)")
+            return
+        }
+        lastEnterTime = now
         val tab = getActiveTabState() ?: return
         val mutableLines = tab.lines.toMutableList()
         val insertIdx = index + 1
@@ -997,6 +1004,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isModified = isNowModified
                 )
                 repository.insertFile(updatedFile)
+            }
+        }
+    }
+
+    fun refreshActiveFileContent() {
+        val activePath = _activeTabPath.value ?: return
+        val owner = _repoOwner.value
+        val repo = _repoName.value
+        val branch = _branchName.value
+        val token = _githubToken.value
+        val authHeader = token?.let { if (it.startsWith("token ") || it.startsWith("Bearer ")) it else "token $it" }
+
+        _isSyncing.value = true
+        _errorMessage.value = null
+        _successMessage.value = null
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Force fetch from remote
+                val contentResponse = gitHubService.getFileContent(authHeader, owner, repo, activePath, branch)
+                val base64Content = contentResponse.content?.replace("\n", "")?.replace("\r", "") ?: ""
+                val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
+                val remoteContent = String(decodedBytes, Charsets.UTF_8)
+                val remoteSha = contentResponse.sha
+
+                // Force insert/overwrite in database as not modified and with fresh content
+                val refreshedFile = FilterFile(
+                    path = activePath,
+                    content = remoteContent,
+                    sha = remoteSha,
+                    lastSynced = System.currentTimeMillis(),
+                    isModified = false,
+                    localContent = null
+                )
+                repository.insertFile(refreshedFile)
+
+                // Update open tab
+                withContext(Dispatchers.Main) {
+                    val baseRawLines = remoteContent.split("\n")
+                    val newOriginalLines = baseRawLines.map { line ->
+                        if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
+                            "! " + line.substring(1)
+                        } else {
+                            line
+                        }
+                    }
+
+                    _openTabs.value = _openTabs.value.map { tab ->
+                        if (tab.path == activePath) {
+                            tab.copy(
+                                lines = newOriginalLines,
+                                originalLines = newOriginalLines,
+                                originalSha = remoteSha,
+                                isModified = false,
+                                activeLineIndex = if (newOriginalLines.isNotEmpty()) 0 else null,
+                                scrollIndex = 0,
+                                scrollOffset = 0
+                            )
+                        } else {
+                            tab
+                        }
+                    }
+                    _isSyncing.value = false
+                    _successMessage.value = "Successfully refreshed file content from GitHub"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _isSyncing.value = false
+                    _errorMessage.value = "Failed to refresh file: ${e.localizedMessage}"
+                }
             }
         }
     }
