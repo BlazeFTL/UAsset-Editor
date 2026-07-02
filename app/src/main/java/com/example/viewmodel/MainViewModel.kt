@@ -595,19 +595,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                // Load from local Room database cache
-                var cachedFile = repository.getFileByPath(path)
+                val owner = _repoOwner.value
+                val repo = _repoName.value
+                val branch = _branchName.value
+                val token = _githubToken.value
+                val authHeader = token?.let { if (it.startsWith("token ")) it else "token $it" }
+
                 var fileContent = ""
                 var fileSha = ""
 
-                if (cachedFile == null || cachedFile.content.isEmpty()) {
-                    // Fetch on-demand from remote
-                    val owner = _repoOwner.value
-                    val repo = _repoName.value
-                    val branch = _branchName.value
-                    val token = _githubToken.value
-                    val authHeader = token?.let { if (it.startsWith("token ")) it else "token $it" }
-
+                try {
+                    // Always fetch freshly from GitHub immediately on demand
                     val contentResponse = withContext(Dispatchers.IO) {
                         gitHubService.getFileContent(authHeader, owner, repo, path, branch)
                     }
@@ -618,7 +616,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fileContent = String(decodedBytes, Charsets.UTF_8).replace("\r", "")
                     fileSha = contentResponse.sha
 
-                    // Save to Room cache
+                    // Save/overwrite Room cache with the freshly fetched file content
                     val updatedFile = FilterFile(
                         path = path,
                         content = fileContent,
@@ -627,20 +625,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isModified = false,
                         localContent = null
                     )
-                    repository.insertFile(updatedFile)
-                } else {
-                    fileContent = cachedFile.localContent ?: cachedFile.content
-                    fileSha = cachedFile.sha
-                    // Silent background check to fetch any newer updates from remote!
-                    syncFileContent(path)
+                    withContext(Dispatchers.IO) {
+                        repository.insertFile(updatedFile)
+                    }
+                } catch (e: Exception) {
+                    Log.w("MainViewModel", "Failed to fetch freshly from GitHub, trying local cache fallback", e)
+                    val cachedFile = withContext(Dispatchers.IO) { repository.getFileByPath(path) }
+                    if (cachedFile != null) {
+                        fileContent = cachedFile.localContent ?: cachedFile.content
+                        fileSha = cachedFile.sha
+                    } else {
+                        throw e
+                    }
                 }
 
                 // Split into lines and auto-format comment spacing
                 val lines = splitAndFormatContent(fileContent)
-
-                // Unmodified base content from GitHub, formatted identically
-                val originalContent = cachedFile?.content ?: fileContent
-                val originalLines = splitAndFormatContent(originalContent)
+                val originalLines = splitAndFormatContent(fileContent)
 
                 val isTxtFile = path.endsWith(".txt", ignoreCase = true)
                 val lastLineIndex = (lines.size - 1).coerceAtLeast(0)
@@ -650,7 +651,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lines = lines,
                     originalLines = originalLines,
                     originalSha = fileSha,
-                    isModified = lines != originalLines,
+                    isModified = false,
                     activeLineIndex = if (isTxtFile) lastLineIndex else null,
                     scrollIndex = if (isTxtFile) lastLineIndex else 0
                 )
@@ -793,11 +794,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val tab = getActiveTabState() ?: return
         if (index < 0 || index >= tab.lines.size) return
 
-        val processedText = if (newText.startsWith("!") && !newText.startsWith("! ") && !newText.startsWith("!#")) {
-            "! " + newText.substring(1)
-        } else {
-            newText
-        }
+        val processedText = newText
 
         if (tab.lines[index] == processedText) return
 
@@ -1055,7 +1052,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Commit Back to GitHub ---
 
-    fun commitAndPushActiveTab() {
+    fun commitAndPushActiveTab(customMessage: String? = null) {
         val tab = getActiveTabState() ?: return
         val token = _githubToken.value
         if (token.isNullOrEmpty()) {
@@ -1072,11 +1069,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val branch = _branchName.value
         val fullContent = tab.lines.joinToString("\n")
 
+        val msg = if (customMessage.isNullOrBlank()) {
+            "Update filters: edit in Filter Editor via PAT authorization"
+        } else {
+            customMessage
+        }
+
         viewModelScope.launch {
             try {
                 val base64Content = Base64.encodeToString(fullContent.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
                 val commitRequest = CommitRequest(
-                    message = "Update filters: edit in Filter Editor via PAT authorization",
+                    message = msg,
                     content = base64Content,
                     sha = tab.originalSha,
                     branch = branch
@@ -1320,13 +1323,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun splitAndFormatContent(content: String): List<String> {
-        return content.replace("\r", "").split("\n").map { line ->
-            if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
-                "! " + line.substring(1)
-            } else {
-                line
-            }
-        }
+        return content.replace("\r", "").split("\n")
     }
 
     private fun restoreTabState() {

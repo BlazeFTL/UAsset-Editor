@@ -412,6 +412,8 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
 
     val context = LocalContext.current
     var showSwitchRepoDialog by remember { mutableStateOf(false) }
+    var showCommitCustomization by remember { mutableStateOf(false) }
+    var customCommitMessage by remember { mutableStateOf("") }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -567,7 +569,11 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
                         onMenuClick = { coroutineScope.launch { drawerState.open() } },
                         onTabSelect = { viewModel.selectTab(it) },
                         onTabClose = { viewModel.closeTab(it) },
-                        onCommitClick = { viewModel.commitAndPushActiveTab() },
+                        onCommitClick = {
+                            val fileName = activeTabPath?.substringAfterLast('/') ?: ""
+                            customCommitMessage = "Update $fileName"
+                            showCommitCustomization = true
+                        },
                         onLogoutClick = { viewModel.logout() },
                         onSwitchRepoClick = { showSwitchRepoDialog = true },
                         onQuickSwitchRepo = { owner, repo, branch ->
@@ -577,6 +583,96 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
                         repoName = repoName,
                         branchName = branchName
                     )
+
+                    if (showCommitCustomization && activeTabPath != null) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp)
+                                .testTag("commit_customization_panel"),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Customize Commit Message",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    IconButton(
+                                        onClick = { showCommitCustomization = false },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Close,
+                                            contentDescription = "Cancel",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = customCommitMessage,
+                                        onValueChange = { customCommitMessage = it },
+                                        placeholder = { Text("Commit message...") },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("commit_message_input"),
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.bodyMedium,
+                                        trailingIcon = {
+                                            if (customCommitMessage.isNotEmpty()) {
+                                                IconButton(
+                                                    onClick = { customCommitMessage = "" },
+                                                    modifier = Modifier.testTag("clear_commit_message_button")
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Clear,
+                                                        contentDescription = "Clear",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            showCommitCustomization = false
+                                            viewModel.commitAndPushActiveTab(customCommitMessage)
+                                        },
+                                        modifier = Modifier.testTag("final_commit_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Commit",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Commit")
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Box(
                         modifier = Modifier
@@ -1355,14 +1451,14 @@ fun LineRow(
             textAlign = TextAlign.End,
             modifier = Modifier
                 .width(lineNumbersWidth)
-                .padding(end = 12.dp, top = 4.dp, bottom = 4.dp)
+                .padding(end = 12.dp, top = 1.dp, bottom = 1.dp)
         )
 
         // Line Content
         Box(
             modifier = Modifier
                 .weight(1f)
-                .padding(vertical = 4.dp, horizontal = 4.dp)
+                .padding(vertical = 1.dp, horizontal = 4.dp)
         ) {
             if (isActive) {
                 // Character-by-character styled live inline text field
@@ -1415,11 +1511,7 @@ fun LineRow(
                             fontFamily = FontFamily.Monospace,
                             fontSize = fontSize.sp,
                             color = MaterialTheme.colorScheme.onBackground,
-                            lineBreak = LineBreak(
-                                strategy = LineBreak.Strategy.Simple,
-                                strictness = LineBreak.Strictness.Loose,
-                                wordBreak = LineBreak.WordBreak.Default
-                            )
+                            lineBreak = LineBreak.Paragraph
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         visualTransformation = remember {
@@ -1480,11 +1572,7 @@ fun LineRow(
                             fontFamily = FontFamily.Monospace,
                             fontSize = fontSize.sp,
                             color = MaterialTheme.colorScheme.onBackground,
-                            lineBreak = LineBreak(
-                                strategy = LineBreak.Strategy.Simple,
-                                strictness = LineBreak.Strictness.Loose,
-                                wordBreak = LineBreak.WordBreak.Default
-                            )
+                            lineBreak = LineBreak.Paragraph
                         ),
                         softWrap = wordWrap,
                         modifier = Modifier.fillMaxWidth()
