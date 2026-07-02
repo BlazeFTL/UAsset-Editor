@@ -1080,6 +1080,18 @@ fun EditorWorkspace(
         )
     }
 
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+
+    LaunchedEffect(tabState.activeLineIndex, imeBottom) {
+        tabState.activeLineIndex?.let { index ->
+            if (index in 0 until tabState.lines.size) {
+                // Ensure active line is scrolled into view smoothly when selection or keyboard changes
+                lazyListState.animateScrollToItem(index)
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1202,6 +1214,7 @@ fun EditorWorkspace(
             // Lazy high-performance scroll rendering
             LazyColumn(
                 state = lazyListState,
+                contentPadding = PaddingValues(bottom = 120.dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
