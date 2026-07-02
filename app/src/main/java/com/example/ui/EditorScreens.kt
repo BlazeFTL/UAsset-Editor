@@ -519,6 +519,8 @@ fun WorkspaceScreen(viewModel: MainViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
     ) {
         ModalNavigationDrawer(
             drawerState = drawerState,
@@ -1253,8 +1255,25 @@ fun LineRow(
         }
     }
 
-    var textFieldValue by remember(isActive, text) {
-        mutableStateOf(TextFieldValue(text = text, selection = TextRange(text.length)))
+    var textFieldValue by remember(isActive) {
+        val prependedText = if (isActive) "\u200B$text" else text
+        mutableStateOf(
+            TextFieldValue(
+                text = prependedText,
+                selection = TextRange(prependedText.length)
+            )
+        )
+    }
+
+    var lastExternalText by remember { mutableStateOf(text) }
+
+    if (text != lastExternalText) {
+        lastExternalText = text
+        val prependedText = if (isActive) "\u200B$text" else text
+        textFieldValue = TextFieldValue(
+            text = prependedText,
+            selection = TextRange(prependedText.length)
+        )
     }
 
     Row(
@@ -1295,15 +1314,21 @@ fun LineRow(
                         value = textFieldValue,
                         onValueChange = { newValue ->
                             if (newValue.text.contains('\n')) {
-                                val parts = newValue.text.split('\n')
+                                val cleanedText = newValue.text.replace("\u200B", "")
+                                val parts = cleanedText.split('\n')
                                 val currentPart = parts[0]
                                 val remainingPart = parts.getOrElse(1) { "" }
+                                lastExternalText = currentPart
                                 onTextChange(currentPart)
                                 onEnterPressed(remainingPart)
+                            } else if (!newValue.text.startsWith("\u200B")) {
+                                onBackspaceAtStart()
                             } else {
+                                val actualText = newValue.text.substring(1)
+                                lastExternalText = actualText
                                 textFieldValue = newValue
-                                if (newValue.text != text) {
-                                    onTextChange(newValue.text)
+                                if (actualText != text) {
+                                    onTextChange(actualText)
                                 }
                             }
                         },
@@ -1312,7 +1337,7 @@ fun LineRow(
                             .focusRequester(focusRequester)
                             .onKeyEvent { keyEvent ->
                                 if (keyEvent.key == Key.Backspace && keyEvent.type == KeyEventType.KeyDown) {
-                                    if (textFieldValue.selection.start == 0 && textFieldValue.selection.end == 0) {
+                                    if (textFieldValue.selection.start <= 1 && textFieldValue.selection.end <= 1) {
                                         onBackspaceAtStart()
                                         true
                                     } else {
@@ -1332,9 +1357,22 @@ fun LineRow(
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         visualTransformation = remember {
                             VisualTransformation { annotated ->
+                                val textWithoutZeroWidth = if (annotated.text.startsWith("\u200B")) {
+                                    annotated.text.substring(1)
+                                } else {
+                                    annotated.text
+                                }
+                                val highlighted = highlightFilterLine(textWithoutZeroWidth)
                                 TransformedText(
-                                    highlightFilterLine(annotated.text),
-                                    OffsetMapping.Identity
+                                    highlighted,
+                                    if (annotated.text.startsWith("\u200B")) {
+                                        object : OffsetMapping {
+                                            override fun originalToTransformed(offset: Int): Int = (offset - 1).coerceAtLeast(0)
+                                            override fun transformedToOriginal(offset: Int): Int = offset + 1
+                                        }
+                                    } else {
+                                        OffsetMapping.Identity
+                                    }
                                 )
                             }
                         },
