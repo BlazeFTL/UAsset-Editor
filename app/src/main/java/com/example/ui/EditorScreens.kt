@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -1358,33 +1359,35 @@ fun EditorWorkspace(
             }
 
             // Lazy high-performance scroll rendering
-            LazyColumn(
-                state = lazyListState,
-                contentPadding = PaddingValues(bottom = 120.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .testTag("editor_lazy_column")
-            ) {
-                itemsIndexed(
-                    items = tabState.lines,
-                    key = { index, _ -> "$index-${tabState.path}" }
-                ) { index, lineText ->
-                    LineRow(
-                        index = index,
-                        text = lineText,
-                        isActive = index == tabState.activeLineIndex,
-                        wordWrap = wordWrap,
-                        fontSize = fontSize,
-                        sharedHorizontalScrollState = sharedHorizontalScrollState,
-                        lineNumbersWidth = lineNumbersWidth,
-                        matches = searchMatches.filter { it.lineIndex == index },
-                        activeMatchStartChar = if (currentMatchIndex >= 0 && searchMatches[currentMatchIndex].lineIndex == index) searchMatches[currentMatchIndex].startChar else null,
-                        onLineClick = { viewModel.selectLine(index) },
-                        onTextChange = { viewModel.updateLine(index, it) },
-                        onEnterPressed = { viewModel.insertLineBelowWithText(index, it) },
-                        onBackspaceAtStart = { viewModel.mergeLineWithPrevious(index) }
-                    )
+            SelectionContainer {
+                LazyColumn(
+                    state = lazyListState,
+                    contentPadding = PaddingValues(bottom = 120.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag("editor_lazy_column")
+                ) {
+                    itemsIndexed(
+                        items = tabState.lines,
+                        key = { index, _ -> "$index-${tabState.path}" }
+                    ) { index, lineText ->
+                        LineRow(
+                            index = index,
+                            text = lineText,
+                            isActive = index == tabState.activeLineIndex,
+                            wordWrap = wordWrap,
+                            fontSize = fontSize,
+                            sharedHorizontalScrollState = sharedHorizontalScrollState,
+                            lineNumbersWidth = lineNumbersWidth,
+                            matches = searchMatches.filter { it.lineIndex == index },
+                            activeMatchStartChar = if (currentMatchIndex >= 0 && searchMatches[currentMatchIndex].lineIndex == index) searchMatches[currentMatchIndex].startChar else null,
+                            onLineClick = { viewModel.selectLine(index) },
+                            onTextChange = { viewModel.updateLine(index, it) },
+                            onEnterPressed = { viewModel.insertLineBelowWithText(index, it) },
+                            onBackspaceAtStart = { viewModel.mergeLineWithPrevious(index) }
+                        )
+                    }
                 }
             }
         }
@@ -1511,7 +1514,7 @@ fun LineRow(
                             fontFamily = FontFamily.Monospace,
                             fontSize = fontSize.sp,
                             color = MaterialTheme.colorScheme.onBackground,
-                            lineBreak = LineBreak.Paragraph
+                            lineBreak = LineBreak.Simple
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         visualTransformation = remember {
@@ -1572,7 +1575,7 @@ fun LineRow(
                             fontFamily = FontFamily.Monospace,
                             fontSize = fontSize.sp,
                             color = MaterialTheme.colorScheme.onBackground,
-                            lineBreak = LineBreak.Paragraph
+                            lineBreak = LineBreak.Simple
                         ),
                         softWrap = wordWrap,
                         modifier = Modifier.fillMaxWidth()
