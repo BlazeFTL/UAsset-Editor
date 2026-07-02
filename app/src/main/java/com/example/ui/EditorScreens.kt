@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1325,7 +1326,8 @@ fun LineRow(
                         textStyle = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = fontSize.sp,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = MaterialTheme.colorScheme.onBackground,
+                            lineBreak = LineBreak.Simple
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         visualTransformation = remember {
@@ -1369,10 +1371,13 @@ fun LineRow(
                 ) {
                     Text(
                         text = finalAnnotated,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = fontSize.sp,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = fontSize.sp,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            lineBreak = LineBreak.Simple
+                        ),
                         softWrap = wordWrap,
-                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

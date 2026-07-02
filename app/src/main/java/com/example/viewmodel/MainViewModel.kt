@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 data class TabState(
     val path: String,
     val lines: List<String>,
+    val originalLines: List<String>,
     val originalSha: String,
     val isModified: Boolean = false,
     val undoStack: List<List<String>> = emptyList(),
@@ -182,6 +183,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val deviceAuthError: StateFlow<String?> = _deviceAuthError.asStateFlow()
 
     private var deviceFlowJob: kotlinx.coroutines.Job? = null
+    private var periodicSyncJob: kotlinx.coroutines.Job? = null
 
     init {
         // Load saved pinned files
@@ -227,6 +229,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _currentScreen.value = "WORKSPACE"
         } else {
             _currentScreen.value = "LOGIN"
+        }
+
+        // Start initial synchronization of the repository tree on app startup
+        if (!_githubToken.value.isNullOrEmpty()) {
+            syncRepositoryTree()
+        }
+
+        // Start periodic synchronization every 5 minutes in background
+        startPeriodicTreeSync()
+    }
+
+    private fun startPeriodicTreeSync() {
+        periodicSyncJob?.cancel()
+        periodicSyncJob = viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                kotlinx.coroutines.delay(5 * 60 * 1000) // 5 minutes
+                Log.d("MainViewModel", "Triggering periodic background sync of repository tree")
+                if (_currentScreen.value == "WORKSPACE" && !_githubToken.value.isNullOrEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        syncRepositoryTree()
+                    }
+                }
+            }
         }
     }
 
@@ -558,6 +583,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (existingTab != null) {
             _activeTabPath.value = path
             clearSearch()
+            // Silent background check for updates when switching tabs
+            syncFileContent(path)
             return
         }
 
@@ -602,11 +629,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     fileContent = cachedFile.localContent ?: cachedFile.content
                     fileSha = cachedFile.sha
+                    // Silent background check to fetch any newer updates from remote!
+                    syncFileContent(path)
                 }
 
                 // Split into lines and auto-format comment spacing
                 val rawLines = fileContent.split("\n")
                 val lines = rawLines.map { line ->
+                    if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
+                        "! " + line.substring(1)
+                    } else {
+                        line
+                    }
+                }
+
+                // Unmodified base content from GitHub, formatted identically
+                val originalContent = cachedFile?.content ?: fileContent
+                val originalLines = originalContent.split("\n").map { line ->
                     if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
                         "! " + line.substring(1)
                     } else {
@@ -620,8 +659,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val newTab = TabState(
                     path = path,
                     lines = lines,
+                    originalLines = originalLines,
                     originalSha = fileSha,
-                    isModified = cachedFile?.isModified ?: false,
+                    isModified = lines != originalLines,
                     activeLineIndex = if (isTxtFile) lastLineIndex else null,
                     scrollIndex = if (isTxtFile) lastLineIndex else 0
                 )
@@ -634,6 +674,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _errorMessage.value = "Failed to load file content: ${e.localizedMessage}"
             } finally {
                 _isSyncing.value = false
+            }
+        }
+    }
+
+    fun syncFileContent(path: String) {
+        val owner = _repoOwner.value
+        val repo = _repoName.value
+        val branch = _branchName.value
+        val token = _githubToken.value ?: return
+        val authHeader = if (token.startsWith("token ") || token.startsWith("Bearer ")) token else "token $token"
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val contentResponse = gitHubService.getFileContent(authHeader, owner, repo, path, branch)
+                val base64Content = contentResponse.content?.replace("\n", "")?.replace("\r", "") ?: ""
+                val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
+                val remoteContent = String(decodedBytes, Charsets.UTF_8)
+                val remoteSha = contentResponse.sha
+
+                val cachedFile = repository.getFileByPath(path)
+                if (cachedFile != null) {
+                    if (cachedFile.sha != remoteSha || cachedFile.content != remoteContent) {
+                        val isModified = cachedFile.isModified
+                        val updatedFile = cachedFile.copy(
+                            content = remoteContent,
+                            sha = remoteSha,
+                            lastSynced = System.currentTimeMillis()
+                        )
+                        repository.insertFile(updatedFile)
+
+                        withContext(Dispatchers.Main) {
+                            _openTabs.value = _openTabs.value.map { tab ->
+                                if (tab.path == path) {
+                                    val baseRawLines = remoteContent.split("\n")
+                                    val newOriginalLines = baseRawLines.map { line ->
+                                        if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
+                                            "! " + line.substring(1)
+                                        } else {
+                                            line
+                                        }
+                                    }
+
+                                    val currentLines = if (!isModified) {
+                                        newOriginalLines
+                                    } else {
+                                        tab.lines
+                                    }
+
+                                    tab.copy(
+                                        lines = currentLines,
+                                        originalLines = newOriginalLines,
+                                        originalSha = remoteSha,
+                                        isModified = currentLines != newOriginalLines
+                                    )
+                                } else {
+                                    tab
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to background-sync file: $path", e)
             }
         }
     }
@@ -659,17 +762,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateActiveTab(lines: List<String>, updateUndo: Boolean = true, activeLine: Int? = null) {
         val activePath = _activeTabPath.value ?: return
         val currentTabs = _openTabs.value
+        var isNowModified = false
         val updatedTabs = currentTabs.map { tab ->
             if (tab.path == activePath) {
                 var undo = tab.undoStack
                 if (updateUndo) {
                     undo = (tab.undoStack + listOf(tab.lines)).takeLast(50) // limit stack size
                 }
+                isNowModified = lines != tab.originalLines
                 tab.copy(
                     lines = lines,
                     undoStack = undo,
                     redoStack = if (updateUndo) emptyList() else tab.redoStack,
-                    isModified = true,
+                    isModified = isNowModified,
                     activeLineIndex = activeLine ?: tab.activeLineIndex
                 )
             } else {
@@ -683,8 +788,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val file = repository.getFileByPath(activePath)
             if (file != null) {
                 val updatedFile = file.copy(
-                    isModified = true,
-                    localContent = lines.joinToString("\n")
+                    isModified = isNowModified,
+                    localContent = if (isNowModified) lines.joinToString("\n") else null
                 )
                 repository.insertFile(updatedFile)
             }
@@ -829,6 +934,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val previousState = tab.undoStack.last()
         val newUndoStack = tab.undoStack.subList(0, tab.undoStack.size - 1)
         val newRedoStack = tab.redoStack + listOf(tab.lines)
+        val isNowModified = previousState != tab.originalLines
 
         val updatedTabs = currentTabs.map {
             if (it.path == activePath) {
@@ -836,7 +942,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lines = previousState,
                     undoStack = newUndoStack,
                     redoStack = newRedoStack,
-                    isModified = true
+                    isModified = isNowModified
                 )
             } else {
                 it
@@ -849,8 +955,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val file = repository.getFileByPath(activePath)
             if (file != null) {
                 val updatedFile = file.copy(
-                    localContent = previousState.joinToString("\n"),
-                    isModified = true
+                    localContent = if (isNowModified) previousState.joinToString("\n") else null,
+                    isModified = isNowModified
                 )
                 repository.insertFile(updatedFile)
             }
@@ -866,6 +972,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val nextState = tab.redoStack.last()
         val newRedoStack = tab.redoStack.subList(0, tab.redoStack.size - 1)
         val newUndoStack = tab.undoStack + listOf(tab.lines)
+        val isNowModified = nextState != tab.originalLines
 
         val updatedTabs = currentTabs.map {
             if (it.path == activePath) {
@@ -873,7 +980,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     lines = nextState,
                     undoStack = newUndoStack,
                     redoStack = newRedoStack,
-                    isModified = true
+                    isModified = isNowModified
                 )
             } else {
                 it
@@ -886,8 +993,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val file = repository.getFileByPath(activePath)
             if (file != null) {
                 val updatedFile = file.copy(
-                    localContent = nextState.joinToString("\n"),
-                    isModified = true
+                    localContent = if (isNowModified) nextState.joinToString("\n") else null,
+                    isModified = isNowModified
                 )
                 repository.insertFile(updatedFile)
             }

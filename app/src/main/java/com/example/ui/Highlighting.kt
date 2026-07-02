@@ -27,8 +27,15 @@ fun highlightFilterLine(line: String, colors: FilterColors = FilterColors()): An
     val trimmed = line.trim()
     if (trimmed.startsWith("!") || trimmed.startsWith("[Adblock")) {
         // Comment or header
-        builder.append(line)
-        builder.addStyle(SpanStyle(color = colors.comment, fontStyle = FontStyle.Italic), 0, line.length)
+        // Replace space after ! with non-breaking space to prevent ugly wrapping of comments in editor
+        val renderedLine = if (line.contains("! ")) {
+            val idx = line.indexOf("! ")
+            line.substring(0, idx) + "!\u00A0" + line.substring(idx + 2)
+        } else {
+            line
+        }
+        builder.append(renderedLine)
+        builder.addStyle(SpanStyle(color = colors.comment, fontStyle = FontStyle.Italic), 0, renderedLine.length)
         return builder.toAnnotatedString()
     }
     
