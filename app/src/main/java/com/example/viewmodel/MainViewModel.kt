@@ -34,7 +34,8 @@ data class TabState(
     val redoStack: List<List<String>> = emptyList(),
     val activeLineIndex: Int? = null,
     val scrollIndex: Int = 0,
-    val scrollOffset: Int = 0
+    val scrollOffset: Int = 0,
+    val scrollRestoreTrigger: Int = 0
 )
 
 data class SearchMatch(
@@ -231,6 +232,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             _currentScreen.value = "LOGIN"
         }
+
+        restoreTabState()
 
         // Start initial synchronization of the repository tree on app startup
         if (!_githubToken.value.isNullOrEmpty()) {
@@ -550,21 +553,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val updatedTabs = currentTabs.map { tab ->
             val dbFile = dbMap[tab.path]
             if (dbFile != null) {
-                // If modified flag changes, or if database has actual content and tab content was empty
                 val activeContent = dbFile.localContent ?: dbFile.content
-                val tabLinesJoined = tab.lines.joinToString("\n")
-                if (activeContent != tabLinesJoined) {
-                    val newLines = activeContent.split("\n")
+                val formattedActiveLines = splitAndFormatContent(activeContent)
+                val formattedOriginalLines = splitAndFormatContent(dbFile.content)
+                
+                if (tab.lines != formattedActiveLines || tab.originalLines != formattedOriginalLines || tab.isModified != dbFile.isModified || tab.originalSha != dbFile.sha) {
                     tab.copy(
-                        lines = newLines,
+                        lines = formattedActiveLines,
+                        originalLines = formattedOriginalLines,
                         originalSha = dbFile.sha,
                         isModified = dbFile.isModified
                     )
                 } else {
-                    tab.copy(
-                        originalSha = dbFile.sha,
-                        isModified = dbFile.isModified
-                    )
+                    tab
                 }
             } else {
                 tab
@@ -614,7 +615,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Decode base64 content
                     val base64Content = contentResponse.content?.replace("\n", "")?.replace("\r", "") ?: ""
                     val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
-                    fileContent = String(decodedBytes, Charsets.UTF_8)
+                    fileContent = String(decodedBytes, Charsets.UTF_8).replace("\r", "")
                     fileSha = contentResponse.sha
 
                     // Save to Room cache
@@ -635,24 +636,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // Split into lines and auto-format comment spacing
-                val rawLines = fileContent.split("\n")
-                val lines = rawLines.map { line ->
-                    if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
-                        "! " + line.substring(1)
-                    } else {
-                        line
-                    }
-                }
+                val lines = splitAndFormatContent(fileContent)
 
                 // Unmodified base content from GitHub, formatted identically
                 val originalContent = cachedFile?.content ?: fileContent
-                val originalLines = originalContent.split("\n").map { line ->
-                    if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
-                        "! " + line.substring(1)
-                    } else {
-                        line
-                    }
-                }
+                val originalLines = splitAndFormatContent(originalContent)
 
                 val isTxtFile = path.endsWith(".txt", ignoreCase = true)
                 val lastLineIndex = (lines.size - 1).coerceAtLeast(0)
@@ -691,7 +679,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val contentResponse = gitHubService.getFileContent(authHeader, owner, repo, path, branch)
                 val base64Content = contentResponse.content?.replace("\n", "")?.replace("\r", "") ?: ""
                 val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
-                val remoteContent = String(decodedBytes, Charsets.UTF_8)
+                val remoteContent = String(decodedBytes, Charsets.UTF_8).replace("\r", "")
                 val remoteSha = contentResponse.sha
 
                 val cachedFile = repository.getFileByPath(path)
@@ -708,14 +696,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         withContext(Dispatchers.Main) {
                             _openTabs.value = _openTabs.value.map { tab ->
                                 if (tab.path == path) {
-                                    val baseRawLines = remoteContent.split("\n")
-                                    val newOriginalLines = baseRawLines.map { line ->
-                                        if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
-                                            "! " + line.substring(1)
-                                        } else {
-                                            line
-                                        }
-                                    }
+                                    val newOriginalLines = splitAndFormatContent(remoteContent)
 
                                     val currentLines = if (!isModified) {
                                         newOriginalLines
@@ -1026,7 +1007,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val contentResponse = gitHubService.getFileContent(authHeader, owner, repo, activePath, branch)
                 val base64Content = contentResponse.content?.replace("\n", "")?.replace("\r", "") ?: ""
                 val decodedBytes = Base64.decode(base64Content, Base64.DEFAULT)
-                val remoteContent = String(decodedBytes, Charsets.UTF_8)
+                val remoteContent = String(decodedBytes, Charsets.UTF_8).replace("\r", "")
                 val remoteSha = contentResponse.sha
 
                 // Force insert/overwrite in database as not modified and with fresh content
@@ -1042,14 +1023,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Update open tab
                 withContext(Dispatchers.Main) {
-                    val baseRawLines = remoteContent.split("\n")
-                    val newOriginalLines = baseRawLines.map { line ->
-                        if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
-                            "! " + line.substring(1)
-                        } else {
-                            line
-                        }
-                    }
+                    val newOriginalLines = splitAndFormatContent(remoteContent)
 
                     _openTabs.value = _openTabs.value.map { tab ->
                         if (tab.path == activePath) {
@@ -1058,9 +1032,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 originalLines = newOriginalLines,
                                 originalSha = remoteSha,
                                 isModified = false,
-                                activeLineIndex = if (newOriginalLines.isNotEmpty()) 0 else null,
-                                scrollIndex = 0,
-                                scrollOffset = 0
+                                activeLineIndex = tab.activeLineIndex?.coerceAtMost(newOriginalLines.size - 1)?.takeIf { it >= 0 },
+                                scrollIndex = tab.scrollIndex.coerceAtMost(newOriginalLines.size - 1).coerceAtLeast(0),
+                                scrollOffset = tab.scrollOffset,
+                                scrollRestoreTrigger = tab.scrollRestoreTrigger + 1
                             )
                         } else {
                             tab
@@ -1310,6 +1285,102 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 tab.copy(scrollIndex = index, scrollOffset = offset)
             } else {
                 tab
+            }
+        }
+    }
+
+    private var isObservingTabChanges = false
+    private fun observeTabChangesAndSave() {
+        if (isObservingTabChanges) return
+        isObservingTabChanges = true
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(_openTabs, _activeTabPath) { tabs, activePath ->
+                Pair(tabs, activePath)
+            }.collect {
+                saveTabStateToPrefs()
+            }
+        }
+    }
+
+    private fun saveTabStateToPrefs() {
+        val openPaths = _openTabs.value.map { it.path }
+        val activePath = _activeTabPath.value ?: ""
+        
+        sharedPrefs.edit().apply {
+            putString("open_tab_paths", openPaths.joinToString(","))
+            putString("active_tab_path", activePath)
+            
+            _openTabs.value.forEach { tab ->
+                putInt("tab_scroll_idx_${tab.path}", tab.scrollIndex)
+                putInt("tab_scroll_offset_${tab.path}", tab.scrollOffset)
+                putInt("tab_active_line_${tab.path}", tab.activeLineIndex ?: -1)
+            }
+            apply()
+        }
+    }
+
+    private fun splitAndFormatContent(content: String): List<String> {
+        return content.replace("\r", "").split("\n").map { line ->
+            if (line.startsWith("!") && !line.startsWith("! ") && !line.startsWith("!#")) {
+                "! " + line.substring(1)
+            } else {
+                line
+            }
+        }
+    }
+
+    private fun restoreTabState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val openPathsStr = sharedPrefs.getString("open_tab_paths", "") ?: ""
+            val activePath = sharedPrefs.getString("active_tab_path", null)
+            if (openPathsStr.isNotEmpty()) {
+                val paths = openPathsStr.split(",")
+                val restoredTabs = mutableListOf<TabState>()
+                for (path in paths) {
+                    if (path.isEmpty()) continue
+                    val cachedFile = repository.getFileByPath(path)
+                    if (cachedFile != null) {
+                        val fileContent = cachedFile.localContent ?: cachedFile.content
+                        val fileSha = cachedFile.sha
+                        
+                        // Split into lines
+                        val lines = splitAndFormatContent(fileContent)
+                        
+                        val originalContent = cachedFile.content
+                        val originalLines = splitAndFormatContent(originalContent)
+                        
+                        val savedScrollIdx = sharedPrefs.getInt("tab_scroll_idx_$path", 0)
+                        val savedScrollOffset = sharedPrefs.getInt("tab_scroll_offset_$path", 0)
+                        val savedActiveLineVal = sharedPrefs.getInt("tab_active_line_$path", -1)
+                        val savedActiveLine = if (savedActiveLineVal == -1) null else savedActiveLineVal
+                        
+                        restoredTabs.add(
+                            TabState(
+                                path = path,
+                                lines = lines,
+                                originalLines = originalLines,
+                                originalSha = fileSha,
+                                isModified = cachedFile.isModified,
+                                activeLineIndex = savedActiveLine,
+                                scrollIndex = savedScrollIdx,
+                                scrollOffset = savedScrollOffset
+                            )
+                        )
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    _openTabs.value = restoredTabs
+                    if (activePath != null && restoredTabs.any { it.path == activePath }) {
+                        _activeTabPath.value = activePath
+                    } else if (restoredTabs.isNotEmpty()) {
+                        _activeTabPath.value = restoredTabs.first().path
+                    }
+                    observeTabChangesAndSave()
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    observeTabChangesAndSave()
+                }
             }
         }
     }

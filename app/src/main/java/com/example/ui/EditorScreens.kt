@@ -1114,7 +1114,7 @@ fun EditorWorkspace(
     val lazyListState = rememberLazyListState()
 
     // Track scroll state of each tab to restore it
-    LaunchedEffect(tabState.path) {
+    LaunchedEffect(tabState.path, tabState.scrollRestoreTrigger) {
         if (tabState.scrollIndex < tabState.lines.size) {
             lazyListState.scrollToItem(tabState.scrollIndex, tabState.scrollOffset)
         }
@@ -1415,7 +1415,11 @@ fun LineRow(
                             fontFamily = FontFamily.Monospace,
                             fontSize = fontSize.sp,
                             color = MaterialTheme.colorScheme.onBackground,
-                            lineBreak = LineBreak.Simple
+                            lineBreak = LineBreak(
+                                strategy = LineBreak.Strategy.Simple,
+                                strictness = LineBreak.Strictness.Loose,
+                                wordBreak = LineBreak.WordBreak.Default
+                            )
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         visualTransformation = remember {
@@ -1476,7 +1480,11 @@ fun LineRow(
                             fontFamily = FontFamily.Monospace,
                             fontSize = fontSize.sp,
                             color = MaterialTheme.colorScheme.onBackground,
-                            lineBreak = LineBreak.Simple
+                            lineBreak = LineBreak(
+                                strategy = LineBreak.Strategy.Simple,
+                                strictness = LineBreak.Strictness.Loose,
+                                wordBreak = LineBreak.WordBreak.Default
+                            )
                         ),
                         softWrap = wordWrap,
                         modifier = Modifier.fillMaxWidth()
